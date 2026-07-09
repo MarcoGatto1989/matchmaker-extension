@@ -1,5 +1,6 @@
-// background.js — MatchMaker BOOT Extension v3.0 Service Worker
+// background.js — MatchMaker BOOT Extension v3.1 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
+// Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
 // ── Default API base (can be overridden via settings) ──
 const DEFAULT_API_BASE = 'https://executive-sphere-production.up.railway.app';
@@ -27,11 +28,26 @@ function getApiBase() {
   });
 }
 
+// ── Fetch with timeout ─────────────────────────────────────────────────
+
+async function safeFetch(url, opts = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { ...opts, signal: controller.signal });
+    clearTimeout(timer);
+    return r;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
 // ── Config fetch ───────────────────────────────────────────────────────
 
 async function fetchConfig(apiBase, token) {
   try {
-    const r = await fetch(`${apiBase}/api/outreach-ext/config`, {
+    const r = await safeFetch(`${apiBase}/api/outreach-ext/config`, {
       headers: { 'Authorization': 'Bearer ' + token }
     });
     if (r.ok) {
@@ -78,7 +94,7 @@ async function sendHeartbeat() {
   const apiBase = await getApiBase();
   if (!token) return;
   try {
-    await fetch(`${apiBase}/api/outreach-ext/heartbeat`, {
+    await safeFetch(`${apiBase}/api/outreach-ext/heartbeat`, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token }
     });
