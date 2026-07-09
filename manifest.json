@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "MatchMaker BOOT Outreach",
-  "version": "2.0.0",
-  "description": "Semi-automatische LinkedIn-Kontaktanfragen für MatchMaker BOOT.",
+  "name": "MatchMaker BOOT",
+  "version": "3.0.0",
+  "description": "LinkedIn/Xing Profil-Import ins ESOS CRM + automatisierte Outreach für MatchMaker Personalberatung.",
   "permissions": ["storage", "activeTab", "scripting", "alarms", "tabs"],
   "host_permissions": [
     "https://www.linkedin.com/*",
+    "https://www.xing.com/*",
+    "https://executive-sphere-production.up.railway.app/*",
     "https://boot-outreach-api-production.up.railway.app/*"
   ],
   "action": {
@@ -13,8 +15,14 @@
     "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
   },
   "background": { "service_worker": "background.js" },
-  "content_scripts": [{
-    "matches": ["https://www.linkedin.com/*"],
-    "js": ["content.js"]
-  }]
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content.js"]
+    },
+    {
+      "matches": ["https://www.xing.com/*"],
+      "js": ["content.js"]
+    }
+  ]
 }
