@@ -1,10 +1,189 @@
 // background.js — Service Worker (Manifest V3)
+// Connects to Railway backend which proxies to Base44
+
 const API_BASE = 'https://boot-outreach-api-production.up.railway.app';
 
-// Tab-Kommunikation: Popup <-> Content Script
+// ── State ──────────────────────────────────────────────────────────────
+let isProcessing = false;
+let dailyCount = 0;
+let config = null;
+let lastConfigFetch = 0;
+
+// ── Token helpers ──────────────────────────────────────────────────────
+
+function getToken() {
+  return new Promise(resolve => {
+    chrome.storage.local.get('extension_token', res => resolve(res.extension_token || ''));
+  });
+}
+
+// ── Config fetch ───────────────────────────────────────────────────────
+
+async function fetchConfig(token) {
+  try {
+    const r = await fetch(`${API_BASE}/api/extension/config`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (r.ok) {
+      config = await r.json();
+      lastConfigFetch = Date.now();
+    }
+  } catch (e) {
+    console.warn('[BOOT] Config fetch failed:', e.message);
+  }
+}
+
+// ── Time / Day checks ──────────────────────────────────────────────────
+
+function isWithinActiveHours() {
+  if (!config) return true;
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const current = h * 60 + m;
+
+  const [startH, startM] = (config.active_hours_start || '09:00').split(':').map(Number);
+  const [endH, endM] = (config.active_hours_end || '17:00').split(':').map(Number);
+  const start = startH * 60 + startM;
+  const end = endH * 60 + endM;
+
+  return current >= start && current <= end;
+}
+
+function isWeekday() {
+  const day = new Date().getDay();
+  return day >= 1 && day <= 5;
+}
+
+function randomDelay() {
+  const min = (config?.min_delay_seconds || 45) * 1000;
+  const max = (config?.max_delay_seconds || 120) * 1000;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// ── Heartbeat ──────────────────────────────────────────────────────────
+
+async function sendHeartbeat() {
+  const token = await getToken();
+  if (!token) return;
+  try {
+    await fetch(`${API_BASE}/api/extension/heartbeat`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+  } catch (e) { /* silent */ }
+}
+
+// ── Job Processing Loop ────────────────────────────────────────────────
+
+async function processNextJob() {
+  if (isProcessing) return;
+
+  const token = await getToken();
+  if (!token) return;
+
+  // Refresh config every 5 minutes
+  if (!config || Date.now() - lastConfigFetch > 300000) {
+    await fetchConfig(token);
+  }
+
+  // Check daily limit
+  const dailyLimit = config?.daily_limit || 25;
+  if (dailyCount >= dailyLimit) {
+    console.log(`[BOOT] Daily limit reached (${dailyCount}/${dailyLimit})`);
+    return;
+  }
+
+  // Check active hours
+  if (!isWithinActiveHours()) {
+    console.log('[BOOT] Outside active hours — skipping');
+    return;
+  }
+
+  // Check weekday
+  if (config?.weekdays_only && !isWeekday()) {
+    console.log('[BOOT] Weekend — skipping');
+    return;
+  }
+
+  isProcessing = true;
+  try {
+    const r = await fetch(`${API_BASE}/api/extension/jobs/queued?limit=1`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const jobs = await r.json();
+
+    if (!jobs || jobs.length === 0) {
+      console.log('[BOOT] No queued jobs');
+      return;
+    }
+
+    const job = jobs[0];
+    console.log(`[BOOT] Processing: ${job.candidate_name} — ${job.linkedin_url}`);
+
+    // Find or open LinkedIn tab
+    const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
+    let tabId;
+    if (tabs.length > 0) {
+      tabId = tabs[0].id;
+    } else {
+      const tab = await chrome.tabs.create({ url: 'https://www.linkedin.com', active: false });
+      tabId = tab.id;
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    // Send command to content script
+    chrome.tabs.sendMessage(tabId, {
+      type: 'EXECUTE_CONTACT_REQUEST',
+      payload: {
+        linkedin_url: job.linkedin_url,
+        text_content: job.text_content || '',
+        job_id: job.id,
+        api_base: API_BASE,
+        token: token,
+      }
+    });
+
+    dailyCount++;
+
+  } catch (e) {
+    console.error('[BOOT] Error:', e.message);
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// ── Alarm-based scheduling ─────────────────────────────────────────────
+
+chrome.alarms.create('processJobs', { periodInMinutes: 2 });
+chrome.alarms.create('heartbeat', { periodInMinutes: 5 });
+chrome.alarms.create('resetDaily', { periodInMinutes: 60 });
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'processJobs') {
+    // Add random delay before processing
+    const delay = randomDelay();
+    setTimeout(() => processNextJob(), delay);
+  }
+  if (alarm.name === 'heartbeat') {
+    await sendHeartbeat();
+  }
+  if (alarm.name === 'resetDaily') {
+    const now = new Date();
+    if (now.getHours() === 0 && now.getMinutes() < 60) {
+      dailyCount = 0;
+    }
+  }
+});
+
+// ── Message handling ───────────────────────────────────────────────────
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SET_TOKEN') {
-    chrome.storage.local.set({ extension_token: msg.token }, () => sendResponse({ ok: true }));
+    chrome.storage.local.set({ extension_token: msg.token }, () => {
+      sendResponse({ ok: true });
+      sendHeartbeat(); // immediately verify connection
+    });
     return true;
   }
 
@@ -13,23 +192,62 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'GET_STATUS') {
+    (async () => {
+      const token = await getToken();
+      if (!token) {
+        sendResponse({ connected: false, dailyCount: 0, config: null });
+        return;
+      }
+      try {
+        const r = await fetch(`${API_BASE}/api/extension/stats`, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const stats = await r.json();
+        sendResponse({
+          connected: true,
+          dailyCount,
+          config,
+          stats,
+          isProcessing,
+          isActive: isWithinActiveHours() && (!config?.weekdays_only || isWeekday()),
+        });
+      } catch (e) {
+        sendResponse({ connected: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === 'PROCESS_NOW') {
+    processNextJob().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
   if (msg.type === 'FETCH_JOBS') {
-    chrome.storage.local.get('extension_token', async (res) => {
+    (async () => {
+      const token = await getToken();
       try {
         const r = await fetch(`${API_BASE}/api/extension/jobs/queued?limit=1`, {
-          headers: { 'Authorization': 'Bearer ' + res.extension_token }
+          headers: { 'Authorization': 'Bearer ' + token }
         });
         const jobs = await r.json();
         sendResponse({ jobs });
       } catch (e) { sendResponse({ error: e.message }); }
-    });
+    })();
     return true;
   }
 
   if (msg.type === 'EXECUTE_JOB') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_CONTACT_REQUEST', payload: msg.payload }, sendResponse);
+      chrome.tabs.sendMessage(tabs[0].id, {
+        type: 'EXECUTE_CONTACT_REQUEST',
+        payload: msg.payload
+      }, sendResponse);
     });
     return true;
   }
 });
+
+// ── Initial heartbeat on install ───────────────────────────────────────
+sendHeartbeat();

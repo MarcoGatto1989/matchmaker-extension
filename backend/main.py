@@ -1,108 +1,75 @@
 """
-MatchMaker BOOT Outreach — Backend API
-Manages the job queue for the Chrome Extension.
-Integrates with Base44 dashboard for candidate management.
+MatchMaker BOOT Outreach — Backend API v2
+Connects to Base44 as the data layer (no local database).
 """
 import os
-import uuid
-import secrets
+import json
+import urllib.parse
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, Integer, select, update
 import httpx
-
 
 # ── Config ──────────────────────────────────────────────────────────────
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-# Railway uses postgresql:// but asyncpg needs postgresql+asyncpg://
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-# Admin token for creating jobs; Extension token for fetching/completing
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
-EXTENSION_TOKEN = os.environ.get("EXTENSION_TOKEN", "")
-
-# Base44 integration
-BASE44_APP_URL = os.environ.get("BASE44_APP_URL", "https://match-boot-flow.base44.app")
+BASE44_URL = os.environ.get("BASE44_URL", "https://match-boot-flow.base44.app/api")
 BASE44_API_KEY = os.environ.get("BASE44_API_KEY", "")
-
 PORT = int(os.environ.get("PORT", "8080"))
 
-# Default message template (German)
-DEFAULT_MESSAGE_TEMPLATE = os.environ.get("DEFAULT_MESSAGE_TEMPLATE", (
-    "Hallo {first_name},\n\n"
-    "mein Name ist Marco Gatto von der MatchMaker Personalberatung. "
-    "Ich bin auf Ihr Profil aufmerksam geworden und beeindruckt von Ihrer Erfahrung"
-    "{at_company}.\n\n"
-    "Aktuell suche ich im Auftrag eines renommierten Mandanten "
-    "eine/n {position} im Raum {location}.\n\n"
-    "Hätten Sie Interesse an einem kurzen, unverbindlichen Austausch?\n\n"
-    "Beste Grüße\nMarco Gatto"
-))
+# ── Base44 HTTP Client ──────────────────────────────────────────────────
+
+def base44_headers():
+    return {"api_key": BASE44_API_KEY, "Content-Type": "application/json"}
 
 
-# ── Database Models ─────────────────────────────────────────────────────
-
-class Base(DeclarativeBase):
-    pass
-
-
-class Job(Base):
-    __tablename__ = "outreach_jobs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    linkedin_url: Mapped[str] = mapped_column(Text, nullable=False)
-    text_content: Mapped[str] = mapped_column(Text, nullable=False)
-    candidate_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="queued")  # queued, in_progress, completed, failed
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                                                   onupdate=lambda: datetime.now(timezone.utc))
-    priority: Mapped[int] = mapped_column(Integer, default=0)
-    base44_candidate_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+async def base44_get(path: str, params: dict | None = None) -> dict | list:
+    """GET request to Base44 API."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(
+            f"{BASE44_URL}{path}",
+            headers=base44_headers(),
+            params=params,
+        )
+        r.raise_for_status()
+        return r.json()
 
 
-class ExtensionToken(Base):
-    __tablename__ = "extension_tokens"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    label: Mapped[str] = mapped_column(String(100), nullable=False, default="default")
-    is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-
-
-# ── Engine & Session ────────────────────────────────────────────────────
-
-engine = create_async_engine(DATABASE_URL, echo=False) if DATABASE_URL else None
-async_session = async_sessionmaker(engine, expire_on_commit=False) if engine else None
+async def base44_post(path: str, body: dict) -> dict:
+    """POST request to Base44 API."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(
+            f"{BASE44_URL}{path}",
+            headers=base44_headers(),
+            json=body,
+        )
+        r.raise_for_status()
+        return r.json()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if engine:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        # Ensure default extension token exists
-        async with async_session() as session:
-            result = await session.execute(
-                select(ExtensionToken).where(ExtensionToken.token == EXTENSION_TOKEN)
-            )
-            if not result.scalar_one_or_none() and EXTENSION_TOKEN:
-                session.add(ExtensionToken(token=EXTENSION_TOKEN, label="default"))
-                await session.commit()
-    yield
-    if engine:
-        await engine.dispose()
+async def base44_put(path: str, body: dict) -> dict:
+    """PUT request to Base44 API."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.put(
+            f"{BASE44_URL}{path}",
+            headers=base44_headers(),
+            json=body,
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+async def base44_delete(path: str) -> dict:
+    """DELETE a single record from Base44 API."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.delete(
+            f"{BASE44_URL}{path}",
+            headers=base44_headers(),
+        )
+        r.raise_for_status()
+        return r.json()
 
 
 # ── FastAPI App ─────────────────────────────────────────────────────────
@@ -110,7 +77,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MatchMaker BOOT Outreach API",
     version="2.0.0",
-    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -122,172 +88,34 @@ app.add_middleware(
 )
 
 
-# ── Auth Dependencies ──────────────────────────────────────────────────
-
-async def verify_admin(authorization: str = Header(...)):
-    token = authorization.replace("Bearer ", "")
-    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid admin token")
-    return token
-
+# ── Auth ────────────────────────────────────────────────────────────────
 
 async def verify_extension(authorization: str = Header(...)):
+    """Verify the extension token against Base44 AutomationSettings."""
     token = authorization.replace("Bearer ", "")
-    if not async_session:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    async with async_session() as session:
-        result = await session.execute(
-            select(ExtensionToken).where(
-                ExtensionToken.token == token,
-                ExtensionToken.is_active == True
-            )
-        )
-        if not result.scalar_one_or_none():
-            raise HTTPException(status_code=401, detail="Invalid extension token")
-    return token
-
-
-async def get_db():
-    if not async_session:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    async with async_session() as session:
-        yield session
+    try:
+        settings = await base44_get("/entities/AutomationSettings", {"limit": "1"})
+        if settings and settings[0].get("extension_token") == token:
+            return token
+    except Exception:
+        pass
+    raise HTTPException(status_code=401, detail="Invalid extension token")
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────
-
-class JobCreate(BaseModel):
-    linkedin_url: str
-    text_content: str
-    candidate_name: Optional[str] = None
-    priority: int = 0
-
-
-class JobBulkCreate(BaseModel):
-    jobs: list[JobCreate]
-
 
 class JobComplete(BaseModel):
     status: str  # "completed" or "failed"
     error: Optional[str] = None
 
 
-class JobResponse(BaseModel):
-    id: str
-    linkedin_url: str
-    text_content: str
-    candidate_name: Optional[str]
-    status: str
-    error_message: Optional[str]
-    created_at: datetime
-    updated_at: datetime
-    priority: int
-    base44_candidate_id: Optional[str] = None
-
-
-class TokenCreate(BaseModel):
-    label: str = "default"
-
-
-class TokenResponse(BaseModel):
-    id: str
-    token: str
-    label: str
-    is_active: bool
-    created_at: datetime
-
-
-class StatsResponse(BaseModel):
-    queued: int
-    in_progress: int
-    completed: int
-    failed: int
-    total: int
-
-
-class PrepareBatchRequest(BaseModel):
-    message_template: Optional[str] = None
-    limit: int = 25
-    project_id: Optional[str] = None
-
-
-class PrepareBatchResponse(BaseModel):
-    jobs_created: int
-    candidates_synced: list[str]
-    message: str
-
-
-class SyncStatusResponse(BaseModel):
-    base44_connected: bool
-    base44_candidates_queued: int
-    railway_jobs_queued: int
-    railway_jobs_completed: int
-    message: str
-
-
-# ── Base44 Helper Functions ────────────────────────────────────────────
-
-async def base44_get(entity: str, params: dict | None = None) -> list[dict]:
-    """Fetch entities from Base44 API."""
-    if not BASE44_API_KEY:
-        raise HTTPException(status_code=500, detail="BASE44_API_KEY not configured")
-    url = f"{BASE44_APP_URL}/api/entities/{entity}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url, headers={"api_key": BASE44_API_KEY}, params=params)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"Base44 API error: {resp.text}")
-        data = resp.json()
-        if isinstance(data, dict) and "message" in data:
-            raise HTTPException(status_code=502, detail=f"Base44 entity error: {data['message']}")
-        return data
-
-
-async def base44_update(entity: str, entity_id: str, data: dict) -> dict:
-    """Update an entity in Base44."""
-    if not BASE44_API_KEY:
-        raise HTTPException(status_code=500, detail="BASE44_API_KEY not configured")
-    url = f"{BASE44_APP_URL}/api/entities/{entity}/{entity_id}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.put(url, headers={"api_key": BASE44_API_KEY}, json=data)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"Base44 update error: {resp.text}")
-        return resp.json()
-
-
-async def base44_create(entity: str, data: dict) -> dict:
-    """Create an entity in Base44."""
-    if not BASE44_API_KEY:
-        raise HTTPException(status_code=500, detail="BASE44_API_KEY not configured")
-    url = f"{BASE44_APP_URL}/api/entities/{entity}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, headers={"api_key": BASE44_API_KEY}, json=data)
-        if resp.status_code not in (200, 201):
-            raise HTTPException(status_code=502, detail=f"Base44 create error: {resp.text}")
-        return resp.json()
-
-
-def personalize_message(template: str, candidate: dict, project: dict | None = None) -> str:
-    """Fill in template placeholders with candidate/project data."""
-    first_name = candidate.get("first_name", "")
-    last_name = candidate.get("last_name", "")
-    company = candidate.get("company", "")
-    position = candidate.get("current_position", "")
-
-    # Get project info
-    proj_position = project.get("position", "Steuerberater") if project else "Steuerberater"
-    location = project.get("location", "München") if project else "München"
-
-    at_company = f" bei {company}" if company else ""
-
-    return template.format(
-        first_name=first_name,
-        last_name=last_name,
-        company=company,
-        position=proj_position,
-        location=location,
-        at_company=at_company,
-        current_position=position,
-    )
+class ConfigResponse(BaseModel):
+    daily_limit: int
+    min_delay_seconds: int
+    max_delay_seconds: int
+    active_hours_start: str
+    active_hours_end: str
+    weekdays_only: bool
 
 
 # ── Health ──────────────────────────────────────────────────────────────
@@ -297,328 +125,217 @@ async def health():
     return {"status": "ok", "service": "matchmaker-boot-outreach", "version": "2.0.0"}
 
 
-# ── Extension Endpoints ────────────────────────────────────────────────
+# ── Extension Endpoints (called by Chrome Extension) ────────────────────
 
-@app.get("/api/extension/jobs/queued", response_model=list[JobResponse])
+@app.get("/api/extension/jobs/queued")
 async def get_queued_jobs(
     limit: int = Query(default=1, ge=1, le=10),
     _token: str = Depends(verify_extension),
-    db: AsyncSession = Depends(get_db),
 ):
-    """Fetch the next queued jobs for the extension to process."""
-    result = await db.execute(
-        select(Job)
-        .where(Job.status == "queued")
-        .order_by(Job.priority.desc(), Job.created_at.asc())
-        .limit(limit)
+    """Fetch the next queued ExtensionJobs from Base44, sorted by priority desc."""
+    q = json.dumps({"status": "queued"})
+    jobs = await base44_get(
+        "/entities/ExtensionJob",
+        {"q": q, "limit": str(limit), "sort_by": "-priority"},
     )
-    jobs = result.scalars().all()
 
     # Mark fetched jobs as in_progress
     for job in jobs:
-        job.status = "in_progress"
-        job.updated_at = datetime.now(timezone.utc)
-    await db.commit()
+        try:
+            await base44_put(
+                f"/entities/ExtensionJob/{job['id']}",
+                {"status": "in_progress"},
+            )
+            job["status"] = "in_progress"
+        except Exception:
+            pass  # best effort
 
     return jobs
 
 
-@app.post("/api/extension/jobs/{job_id}/complete", response_model=JobResponse)
+@app.post("/api/extension/jobs/{job_id}/complete")
 async def complete_job(
     job_id: str,
     body: JobComplete,
     _token: str = Depends(verify_extension),
-    db: AsyncSession = Depends(get_db),
 ):
-    """Mark a job as completed or failed. Also updates Base44 candidate status."""
-    result = await db.execute(select(Job).where(Job.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    """Mark an ExtensionJob as completed or failed and update candidate status."""
+    now = datetime.now(timezone.utc).isoformat()
 
-    job.status = body.status
-    job.error_message = body.error
-    job.updated_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(job)
+    # Update the ExtensionJob
+    update_data = {"status": body.status}
+    if body.status == "completed":
+        update_data["completed_date"] = now
+    if body.error:
+        update_data["error_message"] = body.error
 
-    # Sync status back to Base44
-    if job.base44_candidate_id and BASE44_API_KEY:
+    updated_job = await base44_put(f"/entities/ExtensionJob/{job_id}", update_data)
+
+    # Update the Candidate status too
+    candidate_id = updated_job.get("candidate_id")
+    if candidate_id and body.status == "completed":
         try:
-            new_status = "contacted" if body.status == "completed" else "failed"
-            await base44_update("Candidate", job.base44_candidate_id, {
-                "status": new_status,
-                "last_contact_date": datetime.now(timezone.utc).isoformat(),
+            await base44_put(
+                f"/entities/Candidate/{candidate_id}",
+                {"status": "Kontaktiert", "last_contact_date": now},
+            )
+        except Exception:
+            pass  # best effort
+
+    # Also create a ContactRequest record
+    if body.status == "completed":
+        try:
+            await base44_post("/entities/ContactRequest", {
+                "candidate_id": updated_job.get("candidate_id", ""),
+                "candidate_name": updated_job.get("candidate_name", ""),
+                "candidate_linkedin_url": updated_job.get("linkedin_url", ""),
+                "project_id": updated_job.get("project_id", ""),
+                "request_text": updated_job.get("text_content", ""),
+                "status": "sent",
+                "sent_date": now,
+                "sequence_position": 1,
             })
         except Exception:
-            pass  # Don't fail the completion if Base44 sync fails
+            pass
 
-    return job
-
-
-# ── Admin Endpoints ────────────────────────────────────────────────────
-
-@app.post("/api/admin/jobs", response_model=JobResponse)
-async def create_job(
-    body: JobCreate,
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a single outreach job."""
-    job = Job(
-        linkedin_url=body.linkedin_url,
-        text_content=body.text_content,
-        candidate_name=body.candidate_name,
-        priority=body.priority,
-    )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
-    return job
-
-
-@app.post("/api/admin/jobs/bulk", response_model=list[JobResponse])
-async def create_jobs_bulk(
-    body: JobBulkCreate,
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create multiple outreach jobs at once."""
-    jobs = []
-    for j in body.jobs:
-        job = Job(
-            linkedin_url=j.linkedin_url,
-            text_content=j.text_content,
-            candidate_name=j.candidate_name,
-            priority=j.priority,
-        )
-        db.add(job)
-        jobs.append(job)
-    await db.commit()
-    for job in jobs:
-        await db.refresh(job)
-    return jobs
-
-
-@app.get("/api/admin/jobs", response_model=list[JobResponse])
-async def list_jobs(
-    status: Optional[str] = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all jobs with optional status filter."""
-    query = select(Job).order_by(Job.created_at.desc()).limit(limit).offset(offset)
-    if status:
-        query = query.where(Job.status == status)
-    result = await db.execute(query)
-    return result.scalars().all()
-
-
-@app.get("/api/admin/stats", response_model=StatsResponse)
-async def get_stats(
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get job queue statistics."""
-    from sqlalchemy import func
-    result = await db.execute(
-        select(Job.status, func.count(Job.id)).group_by(Job.status)
-    )
-    counts = {row[0]: row[1] for row in result.all()}
-    return StatsResponse(
-        queued=counts.get("queued", 0),
-        in_progress=counts.get("in_progress", 0),
-        completed=counts.get("completed", 0),
-        failed=counts.get("failed", 0),
-        total=sum(counts.values()),
-    )
-
-
-@app.delete("/api/admin/jobs/{job_id}")
-async def delete_job(
-    job_id: str,
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Delete a job."""
-    result = await db.execute(select(Job).where(Job.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    await db.delete(job)
-    await db.commit()
-    return {"deleted": True}
-
-
-@app.post("/api/admin/jobs/reset-failed", response_model=dict)
-async def reset_failed_jobs(
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Reset all failed jobs back to queued."""
-    result = await db.execute(
-        update(Job)
-        .where(Job.status == "failed")
-        .values(status="queued", error_message=None, updated_at=datetime.now(timezone.utc))
-    )
-    await db.commit()
-    return {"reset_count": result.rowcount}
-
-
-# ── Token Management (Admin) ──────────────────────────────────────────
-
-@app.post("/api/admin/tokens", response_model=TokenResponse)
-async def create_token(
-    body: TokenCreate,
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Generate a new extension token."""
-    new_token = ExtensionToken(
-        token=secrets.token_urlsafe(32),
-        label=body.label,
-    )
-    db.add(new_token)
-    await db.commit()
-    await db.refresh(new_token)
-    return new_token
-
-
-@app.get("/api/admin/tokens", response_model=list[TokenResponse])
-async def list_tokens(
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all extension tokens."""
-    result = await db.execute(select(ExtensionToken).order_by(ExtensionToken.created_at.desc()))
-    return result.scalars().all()
-
-
-# ── Base44 Sync Endpoints ─────────────────────────────────────────────
-
-@app.post("/api/admin/prepare-batch", response_model=PrepareBatchResponse)
-async def prepare_batch(
-    body: PrepareBatchRequest,
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Prepare a daily batch: reads queued candidates from Base44,
-    creates personalized jobs in Railway, updates candidate status in Base44.
-    This is what the 'Batch vorbereiten' button should call.
-    """
-    # 1. Fetch queued candidates from Base44
-    candidates = await base44_get("Candidate")
-    queued = [c for c in candidates if c.get("status") == "queued"]
-
-    if not queued:
-        return PrepareBatchResponse(
-            jobs_created=0,
-            candidates_synced=[],
-            message="Keine Kandidaten in der Warteschlange."
-        )
-
-    # Filter by project if specified
-    if body.project_id:
-        queued = [c for c in queued if c.get("project_id") == body.project_id]
-
-    # Apply limit
-    queued = sorted(queued, key=lambda c: c.get("matching_score", 0), reverse=True)
-    batch = queued[:body.limit]
-
-    # 2. Fetch project info for message personalization
-    projects = await base44_get("Project")
-    project_map = {p["id"]: p for p in projects}
-
-    # 3. Get message template
-    template = body.message_template or DEFAULT_MESSAGE_TEMPLATE
-
-    # 4. Check which candidates already have Railway jobs (avoid duplicates)
-    existing_ids = set()
-    for candidate in batch:
-        cid = candidate["id"]
-        result = await db.execute(
-            select(Job).where(
-                Job.base44_candidate_id == cid,
-                Job.status.in_(["queued", "in_progress"])
-            )
-        )
-        if result.scalar_one_or_none():
-            existing_ids.add(cid)
-
-    # 5. Create jobs for new candidates
-    created_names = []
-    for candidate in batch:
-        cid = candidate["id"]
-        if cid in existing_ids:
-            continue
-
-        project = project_map.get(candidate.get("project_id"))
-        message = personalize_message(template, candidate, project)
-        name = f"{candidate.get('first_name', '')} {candidate.get('last_name', '')}".strip()
-
-        job = Job(
-            linkedin_url=candidate["linkedin_url"],
-            text_content=message,
-            candidate_name=name,
-            priority=int(candidate.get("matching_score", 0)),
-            base44_candidate_id=cid,
-        )
-        db.add(job)
-        created_names.append(name)
-
-        # Update candidate status in Base44
-        try:
-            await base44_update("Candidate", cid, {"status": "batch_prepared"})
-        except Exception:
-            pass  # Don't fail if Base44 update fails
-
-    await db.commit()
-
-    # 6. Log activity in Base44
+    # Log Activity
     try:
-        await base44_create("Activity", {
-            "type": "batch_prepared",
-            "description": f"{len(created_names)} Kontaktanfragen für heute vorbereitet",
+        await base44_post("/entities/Activity", {
+            "type": "contact_request_sent" if body.status == "completed" else "status_change",
+            "description": (
+                f"Kontaktanfrage an {updated_job.get('candidate_name', 'Unbekannt')} gesendet"
+                if body.status == "completed"
+                else f"Job fehlgeschlagen: {body.error or 'Unbekannter Fehler'}"
+            ),
+            "candidate_id": candidate_id or "",
+            "project_id": updated_job.get("project_id", ""),
         })
     except Exception:
         pass
 
-    return PrepareBatchResponse(
-        jobs_created=len(created_names),
-        candidates_synced=created_names,
-        message=f"{len(created_names)} Jobs erstellt, bereit für die Extension."
-    )
+    return updated_job
 
 
-@app.get("/api/admin/sync-status", response_model=SyncStatusResponse)
-async def get_sync_status(
-    _token: str = Depends(verify_admin),
-    db: AsyncSession = Depends(get_db),
+@app.get("/api/extension/config")
+async def get_config(
+    _token: str = Depends(verify_extension),
 ):
-    """Check sync status between Base44 and Railway."""
-    base44_ok = False
-    base44_queued = 0
+    """Return extension configuration from Base44."""
+    configs = await base44_get("/entities/ExtensionConfig", {"limit": "1"})
+    if not configs:
+        return ConfigResponse(
+            daily_limit=25,
+            min_delay_seconds=45,
+            max_delay_seconds=120,
+            active_hours_start="09:00",
+            active_hours_end="17:00",
+            weekdays_only=True,
+        )
+    c = configs[0]
+    return {
+        "daily_limit": int(c.get("daily_limit", 25)),
+        "min_delay_seconds": int(c.get("min_delay_seconds", 45)),
+        "max_delay_seconds": int(c.get("max_delay_seconds", 120)),
+        "active_hours_start": c.get("active_hours_start", "09:00"),
+        "active_hours_end": c.get("active_hours_end", "17:00"),
+        "weekdays_only": c.get("weekdays_only", True),
+    }
 
-    try:
-        candidates = await base44_get("Candidate")
-        base44_ok = True
-        base44_queued = len([c for c in candidates if c.get("status") == "queued"])
-    except Exception:
-        pass
 
-    from sqlalchemy import func
-    result = await db.execute(
-        select(Job.status, func.count(Job.id)).group_by(Job.status)
-    )
-    counts = {row[0]: row[1] for row in result.all()}
+@app.post("/api/extension/heartbeat")
+async def heartbeat(
+    _token: str = Depends(verify_extension),
+):
+    """Extension calls this to signal it's alive; updates ExtensionConfig."""
+    now = datetime.now(timezone.utc).isoformat()
+    configs = await base44_get("/entities/ExtensionConfig", {"limit": "1"})
+    if configs:
+        try:
+            await base44_put(
+                f"/entities/ExtensionConfig/{configs[0]['id']}",
+                {"extension_connected": True, "last_connection_date": now},
+            )
+        except Exception:
+            pass
+    # Also update AutomationSettings
+    settings = await base44_get("/entities/AutomationSettings", {"limit": "1"})
+    if settings:
+        try:
+            await base44_put(
+                f"/entities/AutomationSettings/{settings[0]['id']}",
+                {"extension_connected": True},
+            )
+        except Exception:
+            pass
+    return {"status": "ok", "timestamp": now}
 
-    return SyncStatusResponse(
-        base44_connected=base44_ok,
-        base44_candidates_queued=base44_queued,
-        railway_jobs_queued=counts.get("queued", 0),
-        railway_jobs_completed=counts.get("completed", 0),
-        message="Base44 verbunden" if base44_ok else "Base44 nicht erreichbar",
-    )
+
+@app.get("/api/extension/stats")
+async def get_stats(
+    _token: str = Depends(verify_extension),
+):
+    """Return job queue statistics."""
+    all_jobs = await base44_get("/entities/ExtensionJob", {"limit": "200"})
+    counts = {}
+    for j in all_jobs:
+        s = j.get("status", "unknown")
+        counts[s] = counts.get(s, 0) + 1
+    return {
+        "queued": counts.get("queued", 0),
+        "in_progress": counts.get("in_progress", 0),
+        "completed": counts.get("completed", 0),
+        "failed": counts.get("failed", 0),
+        "skipped": counts.get("skipped", 0),
+        "total": sum(counts.values()),
+    }
+
+
+# ── Admin Endpoints (for convenience / debugging) ──────────────────────
+
+@app.get("/api/admin/jobs")
+async def list_jobs(
+    status: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    skip: int = Query(default=0, ge=0),
+):
+    """List jobs from Base44 (no auth for dashboard access)."""
+    params = {"limit": str(limit), "skip": str(skip), "sort_by": "-created_date"}
+    if status:
+        params["q"] = json.dumps({"status": status})
+    return await base44_get("/entities/ExtensionJob", params)
+
+
+@app.get("/api/admin/candidates")
+async def list_candidates(
+    project_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """List candidates from Base44."""
+    params = {"limit": str(limit), "sort_by": "-matching_score"}
+    if project_id:
+        params["q"] = json.dumps({"project_id": project_id})
+    return await base44_get("/entities/Candidate", params)
+
+
+@app.get("/api/admin/projects")
+async def list_projects():
+    """List projects from Base44."""
+    return await base44_get("/entities/Project")
+
+
+@app.get("/api/admin/stats")
+async def admin_stats():
+    """Admin stats — same as extension stats but no auth."""
+    all_jobs = await base44_get("/entities/ExtensionJob", {"limit": "200"})
+    counts = {}
+    for j in all_jobs:
+        s = j.get("status", "unknown")
+        counts[s] = counts.get(s, 0) + 1
+    return {
+        "queued": counts.get("queued", 0),
+        "in_progress": counts.get("in_progress", 0),
+        "completed": counts.get("completed", 0),
+        "failed": counts.get("failed", 0),
+        "skipped": counts.get("skipped", 0),
+        "total": sum(counts.values()),
+    }
