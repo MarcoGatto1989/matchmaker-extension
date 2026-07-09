@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "MatchMaker BOOT Outreach",
+  "version": "1.0.0",
+  "description": "Semi-automatische LinkedIn-Kontaktanfragen für MatchMaker BOOT.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://www.linkedin.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+  },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["https://www.linkedin.com/*"],
+    "js": ["content.js"]
+  }]
+}
