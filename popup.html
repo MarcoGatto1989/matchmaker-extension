@@ -1,0 +1,21 @@
+<!-- popup.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { width: 320px; font-family: system-ui, sans-serif; padding: 16px; margin: 0; }
+    h2 { font-size: 14px; margin: 0 0 12px; }
+    input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; }
+    button { width: 100%; padding: 8px; background: #f97316; color: white; border: 0; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .status { margin-top: 8px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h2>🧩 MatchMaker BOOT Extension</h2>
+  <input id="token" placeholder="Extension-Token eingeben" />
+  <button id="save">Token speichern</button>
+  <div class="status" id="status">Nicht verbunden.</div>
+  <script src="popup.js"></script>
+</body>
+</html>
