@@ -1,6 +1,7 @@
 """
 MatchMaker BOOT Outreach — Backend API
 Manages the job queue for the Chrome Extension.
+Integrates with Base44 dashboard for candidate management.
 """
 import os
 import uuid
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime, Integer, select, update
+import httpx
 
 
 # ── Config ──────────────────────────────────────────────────────────────
@@ -28,7 +30,23 @@ if DATABASE_URL.startswith("postgresql://"):
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 EXTENSION_TOKEN = os.environ.get("EXTENSION_TOKEN", "")
 
+# Base44 integration
+BASE44_APP_URL = os.environ.get("BASE44_APP_URL", "https://match-boot-flow.base44.app")
+BASE44_API_KEY = os.environ.get("BASE44_API_KEY", "")
+
 PORT = int(os.environ.get("PORT", "8080"))
+
+# Default message template (German)
+DEFAULT_MESSAGE_TEMPLATE = os.environ.get("DEFAULT_MESSAGE_TEMPLATE", (
+    "Hallo {first_name},\n\n"
+    "mein Name ist Marco Gatto von der MatchMaker Personalberatung. "
+    "Ich bin auf Ihr Profil aufmerksam geworden und beeindruckt von Ihrer Erfahrung"
+    "{at_company}.\n\n"
+    "Aktuell suche ich im Auftrag eines renommierten Mandanten "
+    "eine/n {position} im Raum {location}.\n\n"
+    "Hätten Sie Interesse an einem kurzen, unverbindlichen Austausch?\n\n"
+    "Beste Grüße\nMarco Gatto"
+))
 
 
 # ── Database Models ─────────────────────────────────────────────────────
@@ -50,6 +68,7 @@ class Job(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                                                    onupdate=lambda: datetime.now(timezone.utc))
     priority: Mapped[int] = mapped_column(Integer, default=0)
+    base44_candidate_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
 
 class ExtensionToken(Base):
@@ -90,7 +109,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MatchMaker BOOT Outreach API",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -163,6 +182,7 @@ class JobResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     priority: int
+    base44_candidate_id: Optional[str] = None
 
 
 class TokenCreate(BaseModel):
@@ -185,11 +205,96 @@ class StatsResponse(BaseModel):
     total: int
 
 
+class PrepareBatchRequest(BaseModel):
+    message_template: Optional[str] = None
+    limit: int = 25
+    project_id: Optional[str] = None
+
+
+class PrepareBatchResponse(BaseModel):
+    jobs_created: int
+    candidates_synced: list[str]
+    message: str
+
+
+class SyncStatusResponse(BaseModel):
+    base44_connected: bool
+    base44_candidates_queued: int
+    railway_jobs_queued: int
+    railway_jobs_completed: int
+    message: str
+
+
+# ── Base44 Helper Functions ────────────────────────────────────────────
+
+async def base44_get(entity: str, params: dict | None = None) -> list[dict]:
+    """Fetch entities from Base44 API."""
+    if not BASE44_API_KEY:
+        raise HTTPException(status_code=500, detail="BASE44_API_KEY not configured")
+    url = f"{BASE44_APP_URL}/api/entities/{entity}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url, headers={"api_key": BASE44_API_KEY}, params=params)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Base44 API error: {resp.text}")
+        data = resp.json()
+        if isinstance(data, dict) and "message" in data:
+            raise HTTPException(status_code=502, detail=f"Base44 entity error: {data['message']}")
+        return data
+
+
+async def base44_update(entity: str, entity_id: str, data: dict) -> dict:
+    """Update an entity in Base44."""
+    if not BASE44_API_KEY:
+        raise HTTPException(status_code=500, detail="BASE44_API_KEY not configured")
+    url = f"{BASE44_APP_URL}/api/entities/{entity}/{entity_id}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.put(url, headers={"api_key": BASE44_API_KEY}, json=data)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Base44 update error: {resp.text}")
+        return resp.json()
+
+
+async def base44_create(entity: str, data: dict) -> dict:
+    """Create an entity in Base44."""
+    if not BASE44_API_KEY:
+        raise HTTPException(status_code=500, detail="BASE44_API_KEY not configured")
+    url = f"{BASE44_APP_URL}/api/entities/{entity}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, headers={"api_key": BASE44_API_KEY}, json=data)
+        if resp.status_code not in (200, 201):
+            raise HTTPException(status_code=502, detail=f"Base44 create error: {resp.text}")
+        return resp.json()
+
+
+def personalize_message(template: str, candidate: dict, project: dict | None = None) -> str:
+    """Fill in template placeholders with candidate/project data."""
+    first_name = candidate.get("first_name", "")
+    last_name = candidate.get("last_name", "")
+    company = candidate.get("company", "")
+    position = candidate.get("current_position", "")
+
+    # Get project info
+    proj_position = project.get("position", "Steuerberater") if project else "Steuerberater"
+    location = project.get("location", "München") if project else "München"
+
+    at_company = f" bei {company}" if company else ""
+
+    return template.format(
+        first_name=first_name,
+        last_name=last_name,
+        company=company,
+        position=proj_position,
+        location=location,
+        at_company=at_company,
+        current_position=position,
+    )
+
+
 # ── Health ──────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "matchmaker-boot-outreach"}
+    return {"status": "ok", "service": "matchmaker-boot-outreach", "version": "2.0.0"}
 
 
 # ── Extension Endpoints ────────────────────────────────────────────────
@@ -225,7 +330,7 @@ async def complete_job(
     _token: str = Depends(verify_extension),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark a job as completed or failed."""
+    """Mark a job as completed or failed. Also updates Base44 candidate status."""
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
     if not job:
@@ -236,6 +341,18 @@ async def complete_job(
     job.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(job)
+
+    # Sync status back to Base44
+    if job.base44_candidate_id and BASE44_API_KEY:
+        try:
+            new_status = "contacted" if body.status == "completed" else "failed"
+            await base44_update("Candidate", job.base44_candidate_id, {
+                "status": new_status,
+                "last_contact_date": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            pass  # Don't fail the completion if Base44 sync fails
+
     return job
 
 
@@ -377,3 +494,131 @@ async def list_tokens(
     """List all extension tokens."""
     result = await db.execute(select(ExtensionToken).order_by(ExtensionToken.created_at.desc()))
     return result.scalars().all()
+
+
+# ── Base44 Sync Endpoints ─────────────────────────────────────────────
+
+@app.post("/api/admin/prepare-batch", response_model=PrepareBatchResponse)
+async def prepare_batch(
+    body: PrepareBatchRequest,
+    _token: str = Depends(verify_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Prepare a daily batch: reads queued candidates from Base44,
+    creates personalized jobs in Railway, updates candidate status in Base44.
+    This is what the 'Batch vorbereiten' button should call.
+    """
+    # 1. Fetch queued candidates from Base44
+    candidates = await base44_get("Candidate")
+    queued = [c for c in candidates if c.get("status") == "queued"]
+
+    if not queued:
+        return PrepareBatchResponse(
+            jobs_created=0,
+            candidates_synced=[],
+            message="Keine Kandidaten in der Warteschlange."
+        )
+
+    # Filter by project if specified
+    if body.project_id:
+        queued = [c for c in queued if c.get("project_id") == body.project_id]
+
+    # Apply limit
+    queued = sorted(queued, key=lambda c: c.get("matching_score", 0), reverse=True)
+    batch = queued[:body.limit]
+
+    # 2. Fetch project info for message personalization
+    projects = await base44_get("Project")
+    project_map = {p["id"]: p for p in projects}
+
+    # 3. Get message template
+    template = body.message_template or DEFAULT_MESSAGE_TEMPLATE
+
+    # 4. Check which candidates already have Railway jobs (avoid duplicates)
+    existing_ids = set()
+    for candidate in batch:
+        cid = candidate["id"]
+        result = await db.execute(
+            select(Job).where(
+                Job.base44_candidate_id == cid,
+                Job.status.in_(["queued", "in_progress"])
+            )
+        )
+        if result.scalar_one_or_none():
+            existing_ids.add(cid)
+
+    # 5. Create jobs for new candidates
+    created_names = []
+    for candidate in batch:
+        cid = candidate["id"]
+        if cid in existing_ids:
+            continue
+
+        project = project_map.get(candidate.get("project_id"))
+        message = personalize_message(template, candidate, project)
+        name = f"{candidate.get('first_name', '')} {candidate.get('last_name', '')}".strip()
+
+        job = Job(
+            linkedin_url=candidate["linkedin_url"],
+            text_content=message,
+            candidate_name=name,
+            priority=int(candidate.get("matching_score", 0)),
+            base44_candidate_id=cid,
+        )
+        db.add(job)
+        created_names.append(name)
+
+        # Update candidate status in Base44
+        try:
+            await base44_update("Candidate", cid, {"status": "batch_prepared"})
+        except Exception:
+            pass  # Don't fail if Base44 update fails
+
+    await db.commit()
+
+    # 6. Log activity in Base44
+    try:
+        await base44_create("Activity", {
+            "type": "batch_prepared",
+            "description": f"{len(created_names)} Kontaktanfragen für heute vorbereitet",
+        })
+    except Exception:
+        pass
+
+    return PrepareBatchResponse(
+        jobs_created=len(created_names),
+        candidates_synced=created_names,
+        message=f"{len(created_names)} Jobs erstellt, bereit für die Extension."
+    )
+
+
+@app.get("/api/admin/sync-status", response_model=SyncStatusResponse)
+async def get_sync_status(
+    _token: str = Depends(verify_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check sync status between Base44 and Railway."""
+    base44_ok = False
+    base44_queued = 0
+
+    try:
+        candidates = await base44_get("Candidate")
+        base44_ok = True
+        base44_queued = len([c for c in candidates if c.get("status") == "queued"])
+    except Exception:
+        pass
+
+    from sqlalchemy import func
+    result = await db.execute(
+        select(Job.status, func.count(Job.id)).group_by(Job.status)
+    )
+    counts = {row[0]: row[1] for row in result.all()}
+
+    return SyncStatusResponse(
+        base44_connected=base44_ok,
+        base44_candidates_queued=base44_queued,
+        railway_jobs_queued=counts.get("queued", 0),
+        railway_jobs_completed=counts.get("completed", 0),
+        message="Base44 verbunden" if base44_ok else "Base44 nicht erreichbar",
+    )
