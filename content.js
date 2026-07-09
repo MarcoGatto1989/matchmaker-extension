@@ -423,7 +423,7 @@
 
   async function reportCompletion(api_base, job_id, token, status, error) {
     try {
-      await fetch(`${api_base}/api/extension/jobs/${job_id}/complete`, {
+      await fetch(`${api_base}/api/outreach-ext/jobs/${job_id}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({ status, error }),

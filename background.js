@@ -1,7 +1,8 @@
-// background.js — Service Worker (Manifest V3)
-// Connects to Railway backend which proxies to Base44
+// background.js — MatchMaker BOOT Extension v3.0 Service Worker
+// Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 
-const API_BASE = 'https://boot-outreach-api-production.up.railway.app';
+// ── Default API base (can be overridden via settings) ──
+const DEFAULT_API_BASE = 'https://executive-sphere-production.up.railway.app';
 
 // ── State ──────────────────────────────────────────────────────────────
 let isProcessing = false;
@@ -9,7 +10,7 @@ let dailyCount = 0;
 let config = null;
 let lastConfigFetch = 0;
 
-// ── Token helpers ──────────────────────────────────────────────────────
+// ── Storage helpers ────────────────────────────────────────────────────
 
 function getToken() {
   return new Promise(resolve => {
@@ -17,11 +18,20 @@ function getToken() {
   });
 }
 
+function getApiBase() {
+  return new Promise(resolve => {
+    chrome.storage.local.get('esos_url', res => {
+      const url = (res.esos_url || DEFAULT_API_BASE).replace(/\/$/, '');
+      resolve(url);
+    });
+  });
+}
+
 // ── Config fetch ───────────────────────────────────────────────────────
 
-async function fetchConfig(token) {
+async function fetchConfig(apiBase, token) {
   try {
-    const r = await fetch(`${API_BASE}/api/extension/config`, {
+    const r = await fetch(`${apiBase}/api/outreach-ext/config`, {
       headers: { 'Authorization': 'Bearer ' + token }
     });
     if (r.ok) {
@@ -65,9 +75,10 @@ function randomDelay() {
 
 async function sendHeartbeat() {
   const token = await getToken();
+  const apiBase = await getApiBase();
   if (!token) return;
   try {
-    await fetch(`${API_BASE}/api/extension/heartbeat`, {
+    await fetch(`${apiBase}/api/outreach-ext/heartbeat`, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token }
     });
@@ -80,11 +91,12 @@ async function processNextJob() {
   if (isProcessing) return;
 
   const token = await getToken();
+  const apiBase = await getApiBase();
   if (!token) return;
 
   // Refresh config every 5 minutes
   if (!config || Date.now() - lastConfigFetch > 300000) {
-    await fetchConfig(token);
+    await fetchConfig(apiBase, token);
   }
 
   // Check daily limit
@@ -108,7 +120,7 @@ async function processNextJob() {
 
   isProcessing = true;
   try {
-    const r = await fetch(`${API_BASE}/api/extension/jobs/queued?limit=1`, {
+    const r = await fetch(`${apiBase}/api/outreach-ext/jobs/queued?limit=1`, {
       headers: { 'Authorization': 'Bearer ' + token }
     });
     const jobs = await r.json();
@@ -139,7 +151,7 @@ async function processNextJob() {
         linkedin_url: job.linkedin_url,
         text_content: job.text_content || '',
         job_id: job.id,
-        api_base: API_BASE,
+        api_base: apiBase,
         token: token,
       }
     });
@@ -161,7 +173,6 @@ chrome.alarms.create('resetDaily', { periodInMinutes: 60 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'processJobs') {
-    // Add random delay before processing
     const delay = randomDelay();
     setTimeout(() => processNextJob(), delay);
   }
@@ -182,7 +193,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SET_TOKEN') {
     chrome.storage.local.set({ extension_token: msg.token }, () => {
       sendResponse({ ok: true });
-      sendHeartbeat(); // immediately verify connection
+      sendHeartbeat();
     });
     return true;
   }
@@ -195,12 +206,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'GET_STATUS') {
     (async () => {
       const token = await getToken();
+      const apiBase = await getApiBase();
       if (!token) {
         sendResponse({ connected: false, dailyCount: 0, config: null });
         return;
       }
       try {
-        const r = await fetch(`${API_BASE}/api/extension/stats`, {
+        const r = await fetch(`${apiBase}/api/outreach-ext/stats`, {
           headers: { 'Authorization': 'Bearer ' + token }
         });
         const stats = await r.json();
@@ -227,8 +239,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'FETCH_JOBS') {
     (async () => {
       const token = await getToken();
+      const apiBase = await getApiBase();
       try {
-        const r = await fetch(`${API_BASE}/api/extension/jobs/queued?limit=1`, {
+        const r = await fetch(`${apiBase}/api/outreach-ext/jobs/queued?limit=1`, {
           headers: { 'Authorization': 'Bearer ' + token }
         });
         const jobs = await r.json();
@@ -249,5 +262,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// ── Initial heartbeat on install ───────────────────────────────────────
+// ── Initial heartbeat ──────────────────────────────────────────────────
 sendHeartbeat();
