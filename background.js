@@ -1,5 +1,5 @@
 // background.js — Service Worker (Manifest V3)
-const API_BASE = 'https://app-deiner-wahl.base44.app';
+const API_BASE = 'https://boot-outreach-api-production.up.railway.app';
 
 // Tab-Kommunikation: Popup <-> Content Script
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
