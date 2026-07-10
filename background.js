@@ -1,4 +1,4 @@
-// background.js — MatchMaker BOOT Extension v3.1 Service Worker
+// background.js — MatchMaker BOOT Extension v3.2 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
@@ -149,6 +149,12 @@ async function processNextJob() {
     const job = jobs[0];
     console.log(`[BOOT] Processing: ${job.candidate_name} — ${job.linkedin_url}`);
 
+    // ── KandiScout search job: open search URL, scrape result list ──
+    if (job.job_type === 'scout_search' && job.payload) {
+      await runScoutSearch(job, apiBase, token);
+      return;
+    }
+
     // Find or open LinkedIn tab
     const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
     let tabId;
@@ -280,3 +286,56 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ── Initial heartbeat ──────────────────────────────────────────────────
 sendHeartbeat();
+
+
+// ── KandiScout: execute a people-search and report results ─────────────
+async function runScoutSearch(job, apiBase, token) {
+  try {
+    const payload = job.payload || {};
+    const searchUrl = payload.searchUrl || job.linkedin_url;
+    const source = payload.source || (searchUrl.includes('xing.com') ? 'xing' : 'linkedin');
+
+    const tab = await chrome.tabs.create({ url: searchUrl, active: false });
+    // Wait for page render (SPA)
+    await new Promise(r => setTimeout(r, 9000));
+
+    const response = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ success: false, error: 'Timeout' }), 20000);
+      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_SEARCH_RESULTS', source }, (res) => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
+        else resolve(res || { success: false, error: 'Keine Antwort' });
+      });
+    });
+
+    try { chrome.tabs.remove(tab.id); } catch (e) {}
+
+    // Report results to ESOS
+    if (response.success && response.candidates && response.candidates.length) {
+      await safeFetch(`${apiBase}/api/scout/extension-results`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-extension-token': token },
+        body: JSON.stringify({
+          scoutSearchId: payload.scoutSearchId,
+          source,
+          candidates: response.candidates,
+        }),
+      });
+      console.log(`[Scout] ${response.candidates.length} Kandidaten gemeldet`);
+    } else {
+      console.warn('[Scout] Keine Kandidaten gefunden:', response.error || '');
+    }
+
+    // Mark job completed
+    await safeFetch(`${apiBase}/api/outreach-ext/jobs/${job.id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        status: response.success ? 'completed' : 'failed',
+        error: response.success ? null : (response.error || 'Scraping fehlgeschlagen'),
+      }),
+    });
+  } catch (e) {
+    console.error('[Scout] Fehler:', e.message);
+  }
+}

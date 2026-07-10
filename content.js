@@ -7,6 +7,15 @@
 
   // Message handler
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'SCRAPE_SEARCH_RESULTS') {
+      try {
+        const candidates = msg.source === 'xing' ? scrapeXingSearchResults() : scrapeLinkedInSearchResults();
+        sendResponse({ success: true, candidates });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+      return true;
+    }
     if (msg.type === 'EXECUTE_CONTACT_REQUEST') {
       sendContactRequest(msg.payload)
         .then(result => sendResponse(result))
@@ -491,4 +500,63 @@
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SEARCH RESULT LIST SCRAPERS (KandiScout)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  function scrapeLinkedInSearchResults() {
+    const out = [];
+    const cards = document.querySelectorAll('li.reusable-search__result-container, div[data-view-name="search-entity-result-universal-template"], li[class*="result-container"]');
+    cards.forEach(card => {
+      try {
+        const link = card.querySelector('a[href*="/in/"]');
+        if (!link) return;
+        const profileUrl = link.href.split('?')[0];
+        const nameEl = card.querySelector('span[aria-hidden="true"], span[dir="ltr"] > span');
+        const name = (nameEl ? nameEl.textContent : link.textContent).trim().replace(/\s+/g, ' ');
+        if (!name || name.length < 3) return;
+        const subtitleEls = card.querySelectorAll('div[class*="subtitle"], .entity-result__primary-subtitle, .entity-result__secondary-subtitle');
+        const position = subtitleEls[0] ? subtitleEls[0].textContent.trim() : '';
+        const location = subtitleEls[1] ? subtitleEls[1].textContent.trim() : '';
+        out.push({ displayName: name, position, location, profileUrl });
+      } catch (e) {}
+    });
+    return dedupeByUrl(out);
+  }
+
+  function scrapeXingSearchResults() {
+    const out = [];
+    const cards = document.querySelectorAll('a[href*="/profile/"], article');
+    const seen = new Set();
+    cards.forEach(card => {
+      try {
+        const link = card.matches('a[href*="/profile/"]') ? card : card.querySelector('a[href*="/profile/"]');
+        if (!link) return;
+        const profileUrl = link.href.split('?')[0];
+        if (seen.has(profileUrl)) return;
+        const root = card.closest('article') || card;
+        const nameEl = root.querySelector('h2, h3, [class*="name"]');
+        const name = nameEl ? nameEl.textContent.trim().replace(/\s+/g, ' ') : '';
+        if (!name || name.length < 3) return;
+        seen.add(profileUrl);
+        const posEl = root.querySelector('p, [class*="occupation"], [class*="position"]');
+        out.push({
+          displayName: name,
+          position: posEl ? posEl.textContent.trim() : '',
+          profileUrl,
+        });
+      } catch (e) {}
+    });
+    return out.slice(0, 25);
+  }
+
+  function dedupeByUrl(list) {
+    const seen = new Set();
+    return list.filter(c => {
+      if (seen.has(c.profileUrl)) return false;
+      seen.add(c.profileUrl);
+      return true;
+    }).slice(0, 25);
+  }
 })();
