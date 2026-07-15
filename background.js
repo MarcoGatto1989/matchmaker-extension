@@ -115,6 +115,27 @@ async function processNextJob() {
     await fetchConfig(apiBase, token);
   }
 
+  // Manuell gestartete KandiScout-Suchen haben Vorrang und dürfen nicht durch
+  // Outreach-Arbeitszeiten, Tageslimits oder Zufallswartezeiten blockiert werden.
+  isProcessing = true;
+  try {
+    const scoutResponse = await safeFetch(
+      `${apiBase}/api/outreach-ext/jobs/queued?limit=1&job_type=scout_search`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (scoutResponse.ok) {
+      const scoutJobs = await scoutResponse.json();
+      if (scoutJobs && scoutJobs.length > 0) {
+        await runScoutSearch(scoutJobs[0], apiBase, token);
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn('[Scout] Sofortabruf fehlgeschlagen:', e.message);
+  } finally {
+    isProcessing = false;
+  }
+
   // Check daily limit
   const dailyLimit = config?.daily_limit || 25;
   if (dailyCount >= dailyLimit) {
@@ -310,18 +331,25 @@ async function runScoutSearch(job, apiBase, token) {
 
     try { chrome.tabs.remove(tab.id); } catch (e) {}
 
-    // Report results to ESOS
-    if (response.success && response.candidates && response.candidates.length) {
-      await safeFetch(`${apiBase}/api/scout/extension-results`, {
+    // Ergebnisse immer an ESOS melden – auch eine leere Trefferliste beendet
+    // die Suche korrekt und verhindert einen dauerhaft wartenden Status.
+    if (response.success) {
+      const candidates = Array.isArray(response.candidates) ? response.candidates : [];
+      const report = await safeFetch(`${apiBase}/api/scout/extension-results`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-extension-token': token },
         body: JSON.stringify({
           scoutSearchId: payload.scoutSearchId,
           source,
-          candidates: response.candidates,
+          candidates,
         }),
       });
-      console.log(`[Scout] ${response.candidates.length} Kandidaten gemeldet`);
+      if (!report.ok) {
+        const detail = await report.text().catch(() => '');
+        response = { success: false, error: `ESOS-Rückgabe fehlgeschlagen (${report.status}) ${detail}`.trim() };
+      } else {
+        console.log(`[Scout] ${candidates.length} Kandidaten gemeldet`);
+      }
     } else {
       console.warn('[Scout] Keine Kandidaten gefunden:', response.error || '');
     }
