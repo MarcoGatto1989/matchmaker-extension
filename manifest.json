@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "MatchMaker BOOT",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "LinkedIn/Xing Profil-Import ins ESOS CRM + automatisierte Outreach für MatchMaker Personalberatung.",
-  "permissions": ["storage", "activeTab", "scripting", "alarms", "tabs"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "tabs"
+  ],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://www.xing.com/*",
@@ -12,17 +18,32 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.linkedin.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
     },
     {
-      "matches": ["https://www.xing.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://www.xing.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
-  ]
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1W5V5zeuKI+EsCgZw/NuZz5X4u2WpRf/EckWID4U5N9aCIDNcuc570g5TY99z4nLNUOAyL3oz8IxhmZWrFjmcVXHZWPcRBBff4gb7LKRPR2vP9g8B81j7rfmAZOIHMiN7rw3vKzI+MZpd2UVxjH2pS8mEEoIcr9mzjEXZXLhXrXtR7/9JHdMzReiaui42mXhmo62AMY09fmosYxsLE9EB13T/RxR/5DGRb+pehITOD7oRRNTzTBDwBbFPpbcxLx6NkPTbs2hTTIBbxCd3AhafJJdEYXzN9f2K3b0vpkHyaaKNjMYe6gFRbBLuSrwl8L3B/xwxN3gyj/uTL+C9LE+twIDAQAB"
 }
