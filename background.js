@@ -320,7 +320,7 @@ async function runScoutSearch(job, apiBase, token) {
     // Wait for page render (SPA)
     await new Promise(r => setTimeout(r, 9000));
 
-    const response = await new Promise((resolve) => {
+    let response = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve({ success: false, error: 'Timeout' }), 20000);
       chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_SEARCH_RESULTS', source }, (res) => {
         clearTimeout(timer);
