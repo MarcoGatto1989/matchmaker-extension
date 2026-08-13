@@ -1,4 +1,4 @@
-// content.js — MatchMaker BOOT Extension v3.3
+// content.js — MatchMaker BOOT Extension v3.4
 // Runs on LinkedIn & Xing pages
 // Supports: 1) Profile scraping/import to CRM  2) Outreach automation
 
@@ -450,17 +450,17 @@
   // SOCIAL PUBLISHING — uses the provider's normal logged-in web UI
   // ═══════════════════════════════════════════════════════════════════════
 
-  async function publishSocialPost({ channel, text }) {
+  async function publishSocialPost({ channel, text, image }) {
     if (!text || !text.trim()) return { success: false, error: 'Der Beitrag enthält keinen Text.' };
     if (/login|signin|auth/i.test(location.pathname)) {
       return { success: false, error: 'Bitte zuerst beim Anbieter anmelden und den Auftrag erneut starten.' };
     }
-    if (channel === 'linkedin') return publishLinkedInPost(text.trim());
-    if (channel === 'xing_social') return publishXingPost(text.trim());
+    if (channel === 'linkedin') return publishLinkedInPost(text.trim(), image);
+    if (channel === 'xing_social') return publishXingPost(text.trim(), image);
     return { success: false, error: `Der Kanal ${channel} unterstützt noch keinen Social-Post über die Browser-Verbindung.` };
   }
 
-  async function publishLinkedInPost(text) {
+  async function publishLinkedInPost(text, image) {
     const start = await findBySelectorsOrText([
       'button.share-box-feed-entry__trigger',
       'button[aria-label*="Beitrag erstellen"]',
@@ -479,6 +479,8 @@
     setEditableText(editor, text);
     await sleep(600);
 
+    if (image) await attachImageToComposer(image, 'linkedin');
+
     const submit = await findBySelectorsOrText([
       'button.share-actions__primary-action',
       '[role="dialog"] button[aria-label="Posten"]',
@@ -490,7 +492,7 @@
     return { success: true };
   }
 
-  async function publishXingPost(text) {
+  async function publishXingPost(text, image) {
     const start = await findBySelectorsOrText([
       '[data-qa*="create-post"]',
       'button[aria-label*="Beitrag erstellen"]',
@@ -509,6 +511,8 @@
     setEditableText(editor, text);
     await sleep(500);
 
+    if (image) await attachImageToComposer(image, 'xing_social');
+
     const submit = await findBySelectorsOrText([
       '[data-qa*="submit-post"]',
       '[role="dialog"] button[type="submit"]',
@@ -517,6 +521,42 @@
     submit.click();
     await sleep(1500);
     return { success: true };
+  }
+
+  async function attachImageToComposer(image, channel) {
+    if (!image?.base64 || !image?.mimeType) throw new Error('Das Beitragsbild ist unvollständig.');
+    let input = await waitForElement([
+      '[role="dialog"] input[type="file"][accept*="image"]',
+      'input[type="file"][accept*="image"]',
+      '[role="dialog"] input[type="file"]',
+    ], 2500);
+    if (!input) {
+      const mediaButton = await findBySelectorsOrText([
+        '[role="dialog"] button[aria-label*="Medien"]',
+        '[role="dialog"] button[aria-label*="Media"]',
+        '[role="dialog"] button[aria-label*="Foto"]',
+        '[role="dialog"] button[aria-label*="Photo"]',
+        '[role="dialog"] button[data-control-name*="image"]',
+        '[role="dialog"] button[data-qa*="image"]',
+      ], /medien|media|foto|photo|bild|image/i, 5000, true);
+      if (mediaButton) mediaButton.click();
+      input = await waitForElement([
+        '[role="dialog"] input[type="file"][accept*="image"]',
+        'input[type="file"][accept*="image"]',
+        '[role="dialog"] input[type="file"]',
+      ], 7000);
+    }
+    if (!input) throw new Error(`${channel === 'linkedin' ? 'LinkedIn' : 'XING'}-Bildupload wurde nicht gefunden. Der Beitrag wurde nicht ohne Bild veröffentlicht.`);
+    const binary = atob(image.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    const file = new File([bytes], image.fileName || 'esos-social.webp', { type: image.mimeType });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(3500);
   }
 
   function setEditableText(element, text) {
