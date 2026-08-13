@@ -1,4 +1,4 @@
-// background.js — MatchMaker BOOT Extension v3.3 Service Worker
+// background.js — MatchMaker BOOT Extension v3.4 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
@@ -393,6 +393,7 @@ async function runSocialPost(job, apiBase, token) {
 
   let tab;
   try {
+    const image = payload.imageUrl ? await loadSocialImage(payload.imageUrl, apiBase, token, job.id) : null;
     // Active on purpose: the user can see and, if the provider requests it,
     // complete an account/security confirmation in the normal provider UI.
     tab = await chrome.tabs.create({ url: targetUrl, active: true });
@@ -406,6 +407,7 @@ async function runSocialPost(job, apiBase, token) {
         payload: {
           channel,
           text: payload.text || job.text_content || '',
+          image,
         },
       }, result => {
         clearTimeout(timer);
@@ -418,6 +420,25 @@ async function runSocialPost(job, apiBase, token) {
   } catch (error) {
     await completeJob(job.id, apiBase, token, 'failed', error.message || 'Veröffentlichung fehlgeschlagen.');
   }
+}
+
+async function loadSocialImage(imageUrl, apiBase, token, jobId) {
+  const absolute = new URL(imageUrl, apiBase);
+  const allowedOrigin = new URL(apiBase).origin;
+  if (absolute.origin !== allowedOrigin) throw new Error('Das Beitragsbild stammt nicht aus der verbundenen ESOS-Instanz.');
+  const response = await safeFetch(absolute.toString(), {
+    headers: { 'Authorization': 'Bearer ' + token },
+  }, 120000);
+  if (!response.ok) throw new Error(`Das Beitragsbild konnte nicht geladen werden (${response.status}).`);
+  const mimeType = (response.headers.get('content-type') || 'image/webp').split(';')[0];
+  if (!/^image\/(png|jpeg|webp)$/i.test(mimeType)) throw new Error(`Das Bildformat ${mimeType} wird für Social Posts nicht unterstützt.`);
+  const buffer = await response.arrayBuffer();
+  if (!buffer.byteLength || buffer.byteLength > 10 * 1024 * 1024) throw new Error('Das Beitragsbild ist leer oder größer als 10 MB.');
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/jpeg' ? 'jpg' : 'webp';
+  return { base64: btoa(binary), mimeType, fileName: `esos-social-${jobId}.${extension}` };
 }
 
 function waitForTabReady(tabId, timeoutMs) {
