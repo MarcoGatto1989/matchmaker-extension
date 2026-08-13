@@ -1,4 +1,4 @@
-// content.js — MatchMaker BOOT Extension v3.0
+// content.js — MatchMaker BOOT Extension v3.3
 // Runs on LinkedIn & Xing pages
 // Supports: 1) Profile scraping/import to CRM  2) Outreach automation
 
@@ -18,6 +18,12 @@
     }
     if (msg.type === 'EXECUTE_CONTACT_REQUEST') {
       sendContactRequest(msg.payload)
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+    if (msg.type === 'EXECUTE_SOCIAL_POST') {
+      publishSocialPost(msg.payload)
         .then(result => sendResponse(result))
         .catch(err => sendResponse({ success: false, error: err.message }));
       return true;
@@ -438,6 +444,113 @@
         body: JSON.stringify({ status, error }),
       });
     } catch (e) { console.error('[BOOT] Reporting failed:', e.message); }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SOCIAL PUBLISHING — uses the provider's normal logged-in web UI
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async function publishSocialPost({ channel, text }) {
+    if (!text || !text.trim()) return { success: false, error: 'Der Beitrag enthält keinen Text.' };
+    if (/login|signin|auth/i.test(location.pathname)) {
+      return { success: false, error: 'Bitte zuerst beim Anbieter anmelden und den Auftrag erneut starten.' };
+    }
+    if (channel === 'linkedin') return publishLinkedInPost(text.trim());
+    if (channel === 'xing_social') return publishXingPost(text.trim());
+    return { success: false, error: `Der Kanal ${channel} unterstützt noch keinen Social-Post über die Browser-Verbindung.` };
+  }
+
+  async function publishLinkedInPost(text) {
+    const start = await findBySelectorsOrText([
+      'button.share-box-feed-entry__trigger',
+      'button[aria-label*="Beitrag erstellen"]',
+      'button[aria-label*="Start a post"]',
+    ], /beitrag erstellen|start a post/i, 15000);
+    if (!start) throw new Error('LinkedIn-Beitragsdialog wurde nicht gefunden. Ist das Konto angemeldet?');
+    start.click();
+    await sleep(1800);
+
+    const editor = await waitForElement([
+      '.share-creation-state__text-editor [contenteditable="true"]',
+      '.ql-editor[contenteditable="true"]',
+      '[role="dialog"] [contenteditable="true"]',
+    ], 15000);
+    if (!editor) throw new Error('LinkedIn-Textfeld wurde nicht gefunden.');
+    setEditableText(editor, text);
+    await sleep(600);
+
+    const submit = await findBySelectorsOrText([
+      'button.share-actions__primary-action',
+      '[role="dialog"] button[aria-label="Posten"]',
+      '[role="dialog"] button[aria-label="Post"]',
+    ], /^posten$|^post$/i, 10000, true);
+    if (!submit || submit.disabled) throw new Error('LinkedIn-Button „Posten“ ist nicht verfügbar.');
+    submit.click();
+    await sleep(1800);
+    return { success: true };
+  }
+
+  async function publishXingPost(text) {
+    const start = await findBySelectorsOrText([
+      '[data-qa*="create-post"]',
+      'button[aria-label*="Beitrag erstellen"]',
+      'button[aria-label*="Create post"]',
+    ], /beitrag erstellen|beitrag verfassen|create post/i, 15000);
+    if (!start) throw new Error('XING-Beitragsdialog wurde nicht gefunden. Ist das Konto angemeldet und Social Posting verfügbar?');
+    start.click();
+    await sleep(1500);
+
+    const editor = await waitForElement([
+      '[data-qa*="post"] [contenteditable="true"]',
+      '[role="dialog"] [contenteditable="true"]',
+      '[role="dialog"] textarea',
+    ], 12000);
+    if (!editor) throw new Error('XING-Textfeld wurde nicht gefunden.');
+    setEditableText(editor, text);
+    await sleep(500);
+
+    const submit = await findBySelectorsOrText([
+      '[data-qa*="submit-post"]',
+      '[role="dialog"] button[type="submit"]',
+    ], /^veröffentlichen$|^posten$|^publish$/i, 10000, true);
+    if (!submit || submit.disabled) throw new Error('XING-Button „Veröffentlichen“ ist nicht verfügbar.');
+    submit.click();
+    await sleep(1500);
+    return { success: true };
+  }
+
+  function setEditableText(element, text) {
+    element.focus();
+    if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+      element.value = text;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    element.textContent = text;
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+  }
+
+  async function waitForElement(selectors, timeout) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const found = queryFirst(selectors);
+      if (found) return found;
+      await sleep(250);
+    }
+    return null;
+  }
+
+  async function findBySelectorsOrText(selectors, textPattern, timeout, buttonsOnly = false) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const direct = queryFirst(selectors);
+      if (direct) return direct;
+      const candidates = document.querySelectorAll(buttonsOnly ? 'button' : 'button, [role="button"]');
+      const byText = Array.from(candidates).find(element => textPattern.test((element.textContent || '').trim()));
+      if (byText) return byText;
+      await sleep(250);
+    }
+    return null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
