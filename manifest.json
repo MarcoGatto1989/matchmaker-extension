@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MatchMaker BOOT",
-  "version": "3.2.1",
-  "description": "LinkedIn/Xing Profil-Import ins ESOS CRM + automatisierte Outreach für MatchMaker Personalberatung.",
+  "version": "3.3.0",
+  "description": "LinkedIn/XING Profil-Import, Outreach und Social Publishing über die angemeldete Browser-Sitzung.",
   "permissions": [
     "storage",
     "activeTab",

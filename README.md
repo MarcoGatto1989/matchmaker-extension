@@ -1,6 +1,8 @@
 # MatchMaker BOOT Outreach — Chrome Extension
 
-Semi-automatische LinkedIn-Kontaktanfragen für MatchMaker BOOT.
+LinkedIn-/XING-Profilimport, Outreach und Social Publishing über die normale
+Anmeldesitzung des jeweiligen Anbieters. Zugangsdaten werden nicht an ESOS
+übertragen und nicht von der Erweiterung gespeichert.
 
 ## Installation (Chrome)
 
@@ -15,7 +17,7 @@ Semi-automatische LinkedIn-Kontaktanfragen für MatchMaker BOOT.
 |---|---|
 | `manifest.json` | Chrome Extension Manifest V3 |
 | `background.js` | Service Worker — Kommunikation zwischen Popup, Content-Script und API |
-| `content.js` | LinkedIn-Automatisierung (läuft auf linkedin.com) |
+| `content.js` | LinkedIn-/XING-Automatisierung einschließlich Social Publishing |
 | `popup.html` | Popup-UI für Token-Eingabe |
 | `popup.js` | Popup-Logik |
 | `icon*.png` | Extension-Icons (16px, 48px, 128px) |
