@@ -1,4 +1,4 @@
-// background.js — MatchMaker BOOT Extension v3.2 Service Worker
+// background.js — MatchMaker BOOT Extension v3.3 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
@@ -173,6 +173,13 @@ async function processNextJob() {
     // ── KandiScout search job: open search URL, scrape result list ──
     if (job.job_type === 'scout_search' && job.payload) {
       await runScoutSearch(job, apiBase, token);
+      return;
+    }
+
+    // ── Social post: use the already authenticated browser session.
+    // Provider credentials/cookies never leave the provider tab.
+    if (job.job_type === 'social_post' && job.payload) {
+      await runSocialPost(job, apiBase, token);
       return;
     }
 
@@ -366,4 +373,74 @@ async function runScoutSearch(job, apiBase, token) {
   } catch (e) {
     console.error('[Scout] Fehler:', e.message);
   }
+}
+
+// ── Social Content: publish through the user's provider session ─────────
+async function runSocialPost(job, apiBase, token) {
+  const payload = job.payload || {};
+  const channel = payload.channel;
+  const composeUrls = {
+    linkedin: 'https://www.linkedin.com/feed/',
+    xing_social: 'https://www.xing.com/news',
+    xing_jobs: 'https://www.xing.com/jobs',
+  };
+  const targetUrl = payload.composeUrl || composeUrls[channel];
+
+  if (!targetUrl) {
+    await completeJob(job.id, apiBase, token, 'failed', `Kanal ${channel || 'unbekannt'} wird von der Browser-Verbindung nicht unterstützt.`);
+    return;
+  }
+
+  let tab;
+  try {
+    // Active on purpose: the user can see and, if the provider requests it,
+    // complete an account/security confirmation in the normal provider UI.
+    tab = await chrome.tabs.create({ url: targetUrl, active: true });
+    await waitForTabReady(tab.id, 20000);
+    await new Promise(resolve => setTimeout(resolve, 3500));
+
+    const response = await new Promise(resolve => {
+      const timer = setTimeout(() => resolve({ success: false, error: 'Zeitüberschreitung beim Öffnen des Beitragsdialogs.' }), 30000);
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'EXECUTE_SOCIAL_POST',
+        payload: {
+          channel,
+          text: payload.text || job.text_content || '',
+        },
+      }, result => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
+        else resolve(result || { success: false, error: 'Keine Antwort von der Anmeldeseite.' });
+      });
+    });
+
+    await completeJob(job.id, apiBase, token, response.success ? 'completed' : 'failed', response.success ? null : response.error);
+  } catch (error) {
+    await completeJob(job.id, apiBase, token, 'failed', error.message || 'Veröffentlichung fehlgeschlagen.');
+  }
+}
+
+function waitForTabReady(tabId, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Anmeldeseite konnte nicht geladen werden.'));
+    }, timeoutMs);
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function completeJob(jobId, apiBase, token, status, error) {
+  await safeFetch(`${apiBase}/api/outreach-ext/jobs/${jobId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ status, error: error || null }),
+  }, 12000);
 }
