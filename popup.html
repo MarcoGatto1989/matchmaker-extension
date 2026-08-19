@@ -6,7 +6,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       width: 430px;
-      max-height: 640px;
+      max-height: 660px;
       overflow-y: auto;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: #fafafa;
@@ -94,12 +94,12 @@
     .exam-badge { background: #dbeafe; color: #1e40af; }
     .open-badge { background: #dcfce7; color: #166534; }
     .duplicate-warning {
-      background: #fef3c7;
-      border: 1px solid #fbbf24;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
       border-radius: 8px;
       padding: 9px 10px;
       font-size: 11px;
-      color: #92400e;
+      color: #1e40af;
       margin-bottom: 10px;
       display: none;
     }
@@ -137,7 +137,13 @@
     }
     textarea { min-height: 56px; resize: vertical; }
     input:focus, select:focus, textarea:focus { border-color: #2563eb; }
+    select:disabled, input:disabled { background: #f8fafc; color: #94a3b8; }
     .opportunity-select { margin-top: 10px; margin-bottom: 10px; }
+    .project-status {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 5px;
+    }
     .empty-state { text-align: center; padding: 24px 16px; color: #888; }
     .empty-state .icon { font-size: 30px; margin-bottom: 8px; }
     .empty-state p { font-size: 12px; line-height: 1.5; }
@@ -211,7 +217,7 @@
   <div class="header">
     <span>🧩</span>
     <h1>MatchMaker BOOT</h1>
-    <span class="version">v3.8.0</span>
+    <span class="version">v3.8.1</span>
   </div>
 
   <div class="platform-bar" id="platform-bar" style="display:none">
@@ -226,7 +232,7 @@
 
   <div class="tab-content active" id="tab-import">
     <div class="manual-note">
-      Beim Öffnen der Extension auf einem LinkedIn- oder XING-Profil wird <strong>nur dieses aktive Profil</strong> automatisch gelesen und in die ESOS-Felder vorbefüllt. Der Import erfolgt erst nach deinem Klick.
+      Beim Öffnen der Extension auf einem LinkedIn- oder XING-Profil wird <strong>nur dieses aktive Profil</strong> automatisch gelesen. Danach prüft ESOS sofort auf Dubletten und lädt deine aktiven Suchprojekte.
     </div>
 
     <div id="import-empty" class="empty-state">
@@ -246,8 +252,8 @@
       </div>
 
       <div class="duplicate-warning" id="duplicate-warning">
-        <strong>⚠️ Kandidat bereits vorhanden</strong>
-        <span id="duplicate-text">Vorhandener Datensatz wird ergänzt.</span>
+        <strong id="duplicate-title">🔎 Duplikatprüfung</strong>
+        <span id="duplicate-text">Prüfe ESOS …</span>
       </div>
 
       <div class="section-title">Personendaten</div>
@@ -289,11 +295,21 @@
       </div>
 
       <div class="opportunity-select">
-        <label>Suchprojekt / Mandat zuordnen (optional)</label>
-        <select id="opportunity-select"><option value="">— Kein Mandat —</option></select>
+        <label>Mandant / Kunde filtern</label>
+        <select id="account-select" disabled>
+          <option value="">— Alle Mandanten / Kunden —</option>
+        </select>
       </div>
 
-      <button class="btn btn-primary" id="import-btn">📥 In ESOS übernehmen</button>
+      <div class="opportunity-select">
+        <label>Suchprojekt / Mandat zuordnen</label>
+        <select id="opportunity-select" disabled>
+          <option value="">— Kein Suchprojekt / Mandat —</option>
+        </select>
+        <div class="project-status" id="project-status">Suchprojekte werden geladen …</div>
+      </div>
+
+      <button class="btn btn-primary" id="import-btn" disabled>📥 In ESOS übernehmen</button>
       <button class="btn btn-secondary" id="import-open-btn" style="display:none">↗️ Im CRM öffnen</button>
     </div>
 
@@ -327,5 +343,6 @@
   </div>
 
   <script src="popup.js"></script>
+  <script src="manual-import-fixes.js"></script>
 </body>
 </html>
