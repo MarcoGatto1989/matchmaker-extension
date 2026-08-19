@@ -217,7 +217,7 @@
   <div class="header">
     <span>🧩</span>
     <h1>MatchMaker BOOT</h1>
-    <span class="version">v3.8.1</span>
+    <span class="version">v3.8.3</span>
   </div>
 
   <div class="platform-bar" id="platform-bar" style="display:none">
@@ -232,7 +232,7 @@
 
   <div class="tab-content active" id="tab-import">
     <div class="manual-note">
-      Beim Öffnen der Extension auf einem LinkedIn- oder XING-Profil wird <strong>nur dieses aktive Profil</strong> automatisch gelesen. Danach prüft ESOS sofort auf Dubletten und lädt deine aktiven Suchprojekte.
+      Beim Öffnen der Extension auf einem LinkedIn- oder XING-Profil wird <strong>nur dieses aktive Profil</strong> automatisch gelesen. ESOS prüft sofort auf Dubletten; eine Projektzuordnung ist optional. Das Geschlecht wird nur aus einer eindeutigen vorhandenen ESOS-Angabe oder einer expliziten Anrede/Pronomen-Angabe auf dem Profil übernommen.
     </div>
 
     <div id="import-empty" class="empty-state">
@@ -295,16 +295,9 @@
       </div>
 
       <div class="opportunity-select">
-        <label>Mandant / Kunde filtern</label>
-        <select id="account-select" disabled>
-          <option value="">— Alle Mandanten / Kunden —</option>
-        </select>
-      </div>
-
-      <div class="opportunity-select">
-        <label>Suchprojekt / Mandat zuordnen</label>
+        <label>Suchprojekt / Mandat zuordnen (optional)</label>
         <select id="opportunity-select" disabled>
-          <option value="">— Kein Suchprojekt / Mandat —</option>
+          <option value="">— Ohne Projektzuordnung speichern —</option>
         </select>
         <div class="project-status" id="project-status">Suchprojekte werden geladen …</div>
       </div>
