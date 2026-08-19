@@ -1,4 +1,3 @@
-<!-- popup.html — MatchMaker BOOT Extension v3 -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,13 +5,13 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 400px;
+      width: 430px;
+      max-height: 640px;
+      overflow-y: auto;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: #fafafa;
       color: #1a1a1a;
     }
-
-    /* ── Header ── */
     .header {
       background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
       color: white;
@@ -20,6 +19,9 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
     }
     .header h1 { font-size: 15px; font-weight: 700; }
     .header .version {
@@ -30,8 +32,17 @@
       border-radius: 10px;
       font-weight: 500;
     }
-
-    /* ── Tabs ── */
+    .platform-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 16px;
+      background: white;
+      border-bottom: 1px solid #e5e5e5;
+      font-size: 11px;
+      color: #888;
+    }
+    .platform-bar .platform-name { font-weight: 700; color: #333; }
     .tabs {
       display: flex;
       border-bottom: 2px solid #e5e5e5;
@@ -47,44 +58,32 @@
       color: #888;
       border-bottom: 2px solid transparent;
       margin-bottom: -2px;
-      transition: all 0.2s;
     }
-    .tab:hover { color: #555; }
     .tab.active { color: #2563eb; border-bottom-color: #2563eb; }
-
     .tab-content { display: none; padding: 14px 16px; }
     .tab-content.active { display: block; }
-
-    /* ── CRM Import Tab ── */
+    .manual-note {
+      font-size: 11px;
+      line-height: 1.45;
+      color: #475569;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 9px 10px;
+      margin-bottom: 10px;
+    }
     .profile-card {
       background: white;
       border: 1px solid #e5e5e5;
       border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
     }
-    .profile-card .name {
-      font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 2px;
-    }
-    .profile-card .title-line {
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 4px;
-    }
-    .profile-card .detail {
-      font-size: 11px;
-      color: #888;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-top: 3px;
-    }
-    .profile-card .exam-badge {
+    .profile-card .name { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+    .profile-card .title-line { font-size: 12px; color: #555; margin-bottom: 4px; }
+    .profile-card .detail { font-size: 11px; color: #777; margin-top: 3px; }
+    .exam-badge, .open-badge {
       display: inline-block;
-      background: #dbeafe;
-      color: #1e40af;
       font-size: 10px;
       font-weight: 600;
       padding: 2px 8px;
@@ -92,130 +91,78 @@
       margin-top: 6px;
       margin-right: 4px;
     }
-    .profile-card .open-badge {
-      display: inline-block;
-      background: #dcfce7;
-      color: #166534;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 10px;
-      margin-top: 6px;
-    }
-
+    .exam-badge { background: #dbeafe; color: #1e40af; }
+    .open-badge { background: #dcfce7; color: #166534; }
     .duplicate-warning {
       background: #fef3c7;
       border: 1px solid #fbbf24;
       border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 12px;
+      padding: 9px 10px;
+      font-size: 11px;
       color: #92400e;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       display: none;
     }
     .duplicate-warning strong { display: block; margin-bottom: 2px; }
-
-    .opportunity-select {
-      margin-bottom: 12px;
-    }
-    .opportunity-select label {
-      display: block;
+    .section-title {
       font-size: 11px;
-      font-weight: 600;
-      color: #888;
+      font-weight: 800;
+      color: #475569;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-bottom: 4px;
+      letter-spacing: .35px;
+      margin: 12px 0 7px;
     }
-    select {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 12px;
-      background: white;
-      outline: none;
-    }
-    select:focus { border-color: #2563eb; }
-
-    .empty-state {
-      text-align: center;
-      padding: 30px 20px;
-      color: #888;
-    }
-    .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
-    .empty-state p { font-size: 12px; line-height: 1.5; }
-
-    /* ── Outreach Tab ── */
-    .stats-grid {
+    .form-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
-      margin-bottom: 14px;
     }
-    .stat-card {
-      background: white;
-      border: 1px solid #e5e5e5;
-      border-radius: 8px;
-      padding: 10px;
-      text-align: center;
-    }
-    .stat-card .number {
-      font-size: 22px;
-      font-weight: 700;
-      line-height: 1;
-    }
-    .stat-card .label {
-      font-size: 10px;
-      color: #888;
-      margin-top: 3px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-    .stat-card.queued .number { color: #f97316; }
-    .stat-card.done .number { color: #22c55e; }
-    .stat-card.today .number { color: #3b82f6; }
-
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 6px 0;
-      font-size: 12px;
-      color: #666;
-    }
-    .info-row .value { font-weight: 600; color: #333; }
-
-    /* ── Settings Tab ── */
-    .setting-group {
-      margin-bottom: 16px;
-    }
-    .setting-group label {
+    .field.full { grid-column: 1 / -1; }
+    .field label, .opportunity-select label, .setting-group label {
       display: block;
-      font-size: 11px;
-      font-weight: 600;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-bottom: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #64748b;
+      margin-bottom: 3px;
     }
-    input[type="text"], input[type="password"] {
+    input, select, textarea {
       width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #ddd;
+      padding: 7px 8px;
+      border: 1px solid #d7dce2;
       border-radius: 6px;
-      font-size: 13px;
+      font-size: 12px;
+      background: white;
       outline: none;
-      transition: border-color 0.2s;
+      font-family: inherit;
     }
-    input:focus { border-color: #2563eb; }
-
-    /* ── Connection badge ── */
-    .connection-row {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 12px;
+    textarea { min-height: 56px; resize: vertical; }
+    input:focus, select:focus, textarea:focus { border-color: #2563eb; }
+    .opportunity-select { margin-top: 10px; margin-bottom: 10px; }
+    .empty-state { text-align: center; padding: 24px 16px; color: #888; }
+    .empty-state .icon { font-size: 30px; margin-bottom: 8px; }
+    .empty-state p { font-size: 12px; line-height: 1.5; }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 650;
+      font-size: 13px;
+      margin-top: 6px;
     }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-secondary { background: #f1f5f9; color: #334155; }
+    .status-msg {
+      margin-top: 8px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #64748b;
+      text-align: center;
+      min-height: 16px;
+    }
+    .connection-row { display: flex; gap: 6px; margin-bottom: 12px; }
     .conn-badge {
       display: inline-flex;
       align-items: center;
@@ -225,66 +172,35 @@
       font-size: 11px;
       font-weight: 600;
     }
-    .conn-badge .dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-    }
     .conn-badge.ok { background: #dcfce7; color: #166534; }
-    .conn-badge.ok .dot { background: #22c55e; }
     .conn-badge.fail { background: #fee2e2; color: #991b1b; }
-    .conn-badge.fail .dot { background: #ef4444; }
-
-    /* ── Buttons ── */
-    .btn {
-      width: 100%;
-      padding: 10px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 600;
-      font-size: 13px;
-      transition: all 0.2s;
-    }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary { background: #2563eb; color: white; }
-    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
-    .btn-success { background: #16a34a; color: white; }
-    .btn-success:hover:not(:disabled) { background: #15803d; }
-    .btn-orange { background: #f97316; color: white; }
-    .btn-orange:hover:not(:disabled) { background: #ea580c; }
-    .btn-secondary { background: #f3f4f6; color: #374151; }
-    .btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
-    .btn + .btn { margin-top: 6px; }
-
-    .status-msg {
-      margin-top: 8px;
-      font-size: 11px;
-      color: #888;
-      text-align: center;
-      min-height: 16px;
-    }
-
-    /* ── Platform indicator ── */
-    .platform-bar {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 16px;
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .stat-card {
       background: white;
-      border-bottom: 1px solid #e5e5e5;
-      font-size: 11px;
-      color: #888;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
     }
-    .platform-bar .platform-name { font-weight: 600; color: #333; }
-
-    /* ── Loading spinner ── */
+    .stat-card .number { font-size: 22px; font-weight: 700; }
+    .stat-card .label { font-size: 10px; color: #888; margin-top: 3px; text-transform: uppercase; }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 12px;
+      color: #666;
+    }
+    .info-row .value { font-weight: 600; color: #333; }
+    .setting-group { margin-bottom: 14px; }
     .spinner {
       display: inline-block;
-      width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.3);
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
       border-top-color: white;
       border-radius: 50%;
-      animation: spin 0.6s linear infinite;
+      animation: spin .6s linear infinite;
       vertical-align: middle;
       margin-right: 6px;
     }
@@ -292,36 +208,34 @@
   </style>
 </head>
 <body>
-
-  <!-- Header -->
   <div class="header">
     <span>🧩</span>
     <h1>MatchMaker BOOT</h1>
-    <span class="version">v3.7.1</span>
+    <span class="version">v3.8.0</span>
   </div>
 
-  <!-- Platform Bar -->
   <div class="platform-bar" id="platform-bar" style="display:none">
-    <span>📍</span> Aktive Seite: <span class="platform-name" id="platform-name">—</span>
+    <span>📍</span> Aktives Profil: <span class="platform-name" id="platform-name">—</span>
   </div>
 
-  <!-- Tabs -->
   <div class="tabs">
     <div class="tab active" data-tab="import">📥 CRM Import</div>
     <div class="tab" data-tab="outreach">🚀 Outreach</div>
     <div class="tab" data-tab="settings">⚙️ Settings</div>
   </div>
 
-  <!-- ═══ TAB: CRM Import ═══ -->
   <div class="tab-content active" id="tab-import">
+    <div class="manual-note">
+      Beim Öffnen der Extension auf einem LinkedIn- oder XING-Profil wird <strong>nur dieses aktive Profil</strong> automatisch gelesen und in die ESOS-Felder vorbefüllt. Der Import erfolgt erst nach deinem Klick.
+    </div>
 
     <div id="import-empty" class="empty-state">
       <div class="icon">👤</div>
-      <p>Öffne ein LinkedIn- oder Xing-Profil und klicke auf <strong>„Profil laden"</strong></p>
+      <p>Öffne ein LinkedIn- oder XING-Profil. Beim Klick auf die Extension wird es automatisch eingelesen.</p>
     </div>
 
     <div id="import-profile" style="display:none">
-      <div class="profile-card" id="profile-card">
+      <div class="profile-card">
         <div class="name" id="profile-name">—</div>
         <div class="title-line" id="profile-title">—</div>
         <div class="detail" id="profile-company">🏢 —</div>
@@ -333,100 +247,85 @@
 
       <div class="duplicate-warning" id="duplicate-warning">
         <strong>⚠️ Kandidat bereits vorhanden</strong>
-        <span id="duplicate-text">Daten werden aktualisiert (kein Duplikat).</span>
+        <span id="duplicate-text">Vorhandener Datensatz wird ergänzt.</span>
+      </div>
+
+      <div class="section-title">Personendaten</div>
+      <div class="form-grid">
+        <div class="field"><label>Titel</label><input id="candidate-title" type="text" placeholder="Dr., Prof. Dr. …" /></div>
+        <div class="field">
+          <label>Geschlecht</label>
+          <select id="candidate-gender">
+            <option value="">— keine Angabe —</option>
+            <option value="männlich">männlich</option>
+            <option value="weiblich">weiblich</option>
+            <option value="divers">divers</option>
+          </select>
+        </div>
+        <div class="field"><label>Vorname</label><input id="candidate-first-name" type="text" /></div>
+        <div class="field"><label>Nachname *</label><input id="candidate-last-name" type="text" /></div>
+        <div class="field"><label>E-Mail</label><input id="candidate-email" type="email" /></div>
+        <div class="field"><label>Telefon</label><input id="candidate-phone" type="tel" /></div>
+        <div class="field"><label>Mobil</label><input id="candidate-mobile" type="tel" /></div>
+        <div class="field"><label>Ort</label><input id="candidate-city" type="text" /></div>
+        <div class="field"><label>PLZ</label><input id="candidate-zip" type="text" /></div>
+      </div>
+
+      <div class="section-title">Beruf &amp; Klassifikation</div>
+      <div class="form-grid">
+        <div class="field full"><label>Aktuelle Position</label><input id="candidate-position" type="text" /></div>
+        <div class="field full"><label>Aktuelle Firma</label><input id="candidate-company" type="text" /></div>
+        <div class="field"><label>Berufsexamen</label><input id="candidate-exams" type="text" placeholder="WP, StB, RA …" /></div>
+        <div class="field"><label>Berufskategorie</label><input id="candidate-category" type="text" /></div>
+        <div class="field"><label>Wechselbereitschaft</label><input id="candidate-availability" type="text" /></div>
+        <div class="field"><label>Klassifikation</label><input id="candidate-classification" type="text" /></div>
+      </div>
+
+      <div class="section-title">Profile &amp; Zuordnung</div>
+      <div class="form-grid">
+        <div class="field full"><label>LinkedIn URL</label><input id="candidate-linkedin" type="url" /></div>
+        <div class="field full"><label>XING URL</label><input id="candidate-xing" type="url" /></div>
+        <div class="field full"><label>Notizen</label><textarea id="candidate-notes"></textarea></div>
       </div>
 
       <div class="opportunity-select">
-        <label>Mandat zuordnen (optional)</label>
-        <select id="opportunity-select">
-          <option value="">— Kein Mandat —</option>
-        </select>
+        <label>Suchprojekt / Mandat zuordnen (optional)</label>
+        <select id="opportunity-select"><option value="">— Kein Mandat —</option></select>
       </div>
 
-      <button class="btn btn-primary" id="import-btn">📥 In ESOS importieren</button>
+      <button class="btn btn-primary" id="import-btn">📥 In ESOS übernehmen</button>
       <button class="btn btn-secondary" id="import-open-btn" style="display:none">↗️ Im CRM öffnen</button>
     </div>
 
-    <button class="btn btn-secondary" id="scrape-btn" style="margin-top:8px">🔍 Profil laden</button>
+    <button class="btn btn-secondary" id="scrape-btn">🔄 Profil neu einlesen</button>
     <div class="status-msg" id="import-status"></div>
   </div>
 
-  <!-- ═══ TAB: Outreach ═══ -->
   <div class="tab-content" id="tab-outreach">
-    <div class="connection-row">
-      <div class="conn-badge" id="outreach-badge">
-        <span class="dot"></span>
-        <span id="outreach-badge-text">Prüfe…</span>
-      </div>
-    </div>
-
+    <div class="connection-row"><div class="conn-badge" id="outreach-badge"><span id="outreach-badge-text">Prüfe…</span></div></div>
     <div class="stats-grid">
-      <div class="stat-card queued">
-        <div class="number" id="queued">–</div>
-        <div class="label">In Queue</div>
-      </div>
-      <div class="stat-card done">
-        <div class="number" id="completed">–</div>
-        <div class="label">Gesendet</div>
-      </div>
-      <div class="stat-card today">
-        <div class="number" id="today">–</div>
-        <div class="label">Heute</div>
-      </div>
+      <div class="stat-card"><div class="number" id="queued">–</div><div class="label">In Queue</div></div>
+      <div class="stat-card"><div class="number" id="completed">–</div><div class="label">Gesendet</div></div>
+      <div class="stat-card"><div class="number" id="today">–</div><div class="label">Heute</div></div>
     </div>
-
-    <div class="info-row">
-      <span>Status</span>
-      <span class="value" id="active-status">—</span>
-    </div>
-    <div class="info-row">
-      <span>Aktive Zeiten</span>
-      <span class="value" id="active-hours">—</span>
-    </div>
-    <div class="info-row">
-      <span>Tageslimit</span>
-      <span class="value" id="daily-limit">—</span>
-    </div>
+    <div class="info-row"><span>Status</span><span class="value" id="active-status">—</span></div>
+    <div class="info-row"><span>Aktive Zeiten</span><span class="value" id="active-hours">—</span></div>
+    <div class="info-row"><span>Tageslimit</span><span class="value" id="daily-limit">—</span></div>
   </div>
 
-  <!-- ═══ TAB: Settings ═══ -->
   <div class="tab-content" id="tab-settings">
     <div class="connection-row">
-      <div class="conn-badge" id="esos-badge">
-        <span class="dot"></span>
-        <span id="esos-badge-text">ESOS</span>
-      </div>
-      <div class="conn-badge" id="boot-badge">
-        <span class="dot"></span>
-        <span id="boot-badge-text">BOOT API</span>
-      </div>
+      <div class="conn-badge" id="esos-badge"><span id="esos-badge-text">ESOS</span></div>
+      <div class="conn-badge" id="boot-badge"><span id="boot-badge-text">BOOT API</span></div>
     </div>
-
-    <div class="setting-group">
-      <label>ESOS CRM URL</label>
-      <input type="text" id="esos-url" placeholder="https://executive-sphere-production.up.railway.app" />
-    </div>
-
-    <div class="setting-group">
-      <label>ESOS Login E-Mail</label>
-      <input type="text" id="esos-email" placeholder="gatto@matchmaker-personal.de" />
-    </div>
-
-    <div class="setting-group">
-      <label>ESOS Login Passwort</label>
-      <input type="password" id="esos-password" placeholder="Passwort" />
-    </div>
-
-    <div class="setting-group">
-      <label>BOOT Extension-Token (Outreach)</label>
-      <input type="password" id="boot-token" placeholder="MM-EXT-..." />
-    </div>
-
-    <button class="btn btn-primary" id="save-settings">💾 Speichern & Verbinden</button>
+    <div class="setting-group"><label>ESOS CRM URL</label><input type="text" id="esos-url" placeholder="https://executive-sphere-production.up.railway.app" /></div>
+    <div class="setting-group"><label>ESOS Login E-Mail</label><input type="text" id="esos-email" /></div>
+    <div class="setting-group"><label>ESOS Login Passwort</label><input type="password" id="esos-password" /></div>
+    <div class="setting-group"><label>BOOT Extension-Token (Outreach)</label><input type="password" id="boot-token" /></div>
+    <button class="btn btn-primary" id="save-settings">💾 Speichern &amp; Verbinden</button>
     <div class="status-msg" id="settings-status"></div>
   </div>
 
   <script src="popup.js"></script>
 </body>
 </html>
-
