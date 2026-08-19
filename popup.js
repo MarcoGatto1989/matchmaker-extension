@@ -1,4 +1,4 @@
-// popup.js — MatchMaker BOOT Extension v3.2.1 (Stable)
+// popup.js — MatchMaker BOOT Extension v3.6.0
 // Tabs: CRM Import | Outreach | Settings
 // Key improvements: auto-reauth, fetch timeouts, graceful error recovery
 
@@ -578,3 +578,4 @@ function loadOutreachStatus() {
     });
   } catch (e) { /* background page not available */ }
 }
+

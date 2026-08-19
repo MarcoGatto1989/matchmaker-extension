@@ -1,9 +1,9 @@
 # MatchMaker BOOT Outreach — Chrome Extension
 
 LinkedIn-/XING-Profilimport, Outreach und Social Publishing über die normale
-Anmeldesitzung des jeweiligen Anbieters. Version 3.4.0 übernimmt dabei auch das
+Anmeldesitzung des jeweiligen Anbieters. Version 3.6.0 übernimmt dabei auch das
 in ESOS freigegebene Beitragsbild und lädt es erst direkt vor der Veröffentlichung
-authentifiziert aus ESOS. Zugangsdaten werden nicht an ESOS übertragen und nicht
+authentifiziert aus ESOS. Der Positionsabgleich liest vorhandene Profil-Links per Hintergrundanfrage mit der Browser-Sitzung aus und öffnet dabei keine Tabs. Zugangsdaten werden nicht an ESOS übertragen und nicht
 von der Erweiterung gespeichert.
 
 ## Installation (Chrome)
@@ -33,3 +33,4 @@ Die ESOS-URL und der mandantenspezifische Extension-Token werden im Settings-Tab
 Diese Extension benötigt ein Backend-API, das folgende Endpunkte bereitstellt:
 - `GET /api/outreach-ext/jobs/queued?limit=1` — Nächsten Job abrufen
 - `POST /api/outreach-ext/jobs/{job_id}/complete` — Job-Status melden
+

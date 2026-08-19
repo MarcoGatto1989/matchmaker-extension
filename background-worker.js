@@ -1,12 +1,11 @@
-// MatchMaker BOOT v3.5 worker wrapper
-// Loads the established background runtime and replaces only the position-check
-// handler so live profile checks drain their queue continuously.
-importScripts('background.js');
+// MatchMaker BOOT v3.6 position worker
+// Reads an existing LinkedIn/XING profile with the browser session in a
+// background request. It never creates or activates a browser tab.
+importScripts('background.js', 'position-profile-parser.js');
 
 runPositionCheck = async function(job, apiBase, token) {
   const payload = job.payload || {};
   const profileUrl = payload.profileUrl || job.linkedin_url;
-  let tab;
 
   const report = async (success, data = null, platform = null, error = null) => {
     const response = await safeFetch(`${apiBase}/api/position-check-ext/results`, {
@@ -21,35 +20,64 @@ runPositionCheck = async function(job, apiBase, token) {
   };
 
   try {
-    if (!/^https:\/\/(www\.)?(linkedin\.com|xing\.com)\//i.test(String(profileUrl || ''))) {
-      await report(false, null, null, 'Ungültiger LinkedIn-/XING-Profillink.');
+    let url;
+    try { url = new URL(String(profileUrl || '')); } catch { url = null; }
+    const host = url?.hostname.replace(/^www\./, '').toLowerCase() || '';
+    const platform = host === 'xing.com' || host.endsWith('.xing.com') ? 'xing'
+      : host === 'linkedin.com' || host.endsWith('.linkedin.com') ? 'linkedin'
+        : null;
+    const validPath = platform === 'xing'
+      ? /^\/(?:profile|pages)\//i.test(url?.pathname || '')
+      : platform === 'linkedin'
+        ? /^\/in\//i.test(url?.pathname || '')
+        : false;
+    if (!url || url.protocol !== 'https:' || !platform || !validPath) {
+      await report(false, null, platform || payload.network || null, 'Ungültiger LinkedIn-/XING-Profillink.');
       return;
     }
 
-    tab = await chrome.tabs.create({ url: profileUrl, active: false });
-    try {
-      await waitForTabReady(tab.id, 25000);
-    } catch (error) {
-      console.warn('[Positionsabgleich] Tab-Ready nicht bestätigt:', error.message);
-    }
-    await new Promise(resolve => setTimeout(resolve, 4500));
-
-    const scraped = await new Promise(resolve => {
-      const timer = setTimeout(() => resolve({ success: false, error: 'Zeitüberschreitung beim Auslesen des Profils.' }), 25000);
-      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_PROFILE' }, result => {
-        clearTimeout(timer);
-        if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
-        else resolve(result || { success: false, error: 'Keine Antwort vom Profil-Scraper.' });
-      });
-    });
-
-    if (!scraped.success) {
-      await report(false, null, scraped.platform || payload.network || null, scraped.error || 'Profil konnte nicht ausgelesen werden.');
+    const response = await safeFetch(url.toString(), {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'de-DE,de;q=0.9,en;q=0.7',
+      },
+    }, 20000);
+    if (!response.ok) {
+      await report(false, null, platform, `Profil konnte nicht geladen werden (HTTP ${response.status}).`);
       return;
     }
 
-    await report(true, scraped.data || {}, scraped.platform || payload.network || null, null);
-    console.log(`[Positionsabgleich] ${job.candidate_name} live geprüft (${scraped.platform || payload.network || 'Profil'}).`);
+    let finalUrl;
+    try { finalUrl = new URL(response.url); } catch { finalUrl = null; }
+    const expectedPath = url.pathname.replace(/\/$/, '').toLowerCase();
+    const finalPath = finalUrl?.pathname.replace(/\/$/, '').toLowerCase() || '';
+    const finalHost = finalUrl?.hostname.replace(/^www\./, '').toLowerCase() || '';
+    const sameNetwork = platform === 'xing'
+      ? finalHost === 'xing.com' || finalHost.endsWith('.xing.com')
+      : finalHost === 'linkedin.com' || finalHost.endsWith('.linkedin.com');
+    if (!sameNetwork || (expectedPath !== finalPath && !finalPath.startsWith(`${expectedPath}/`))) {
+      await report(false, null, platform, 'Das Netzwerk hat auf eine Login- oder andere Seite umgeleitet.');
+      return;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      await report(false, null, platform, 'Das Profil lieferte kein lesbares HTML.');
+      return;
+    }
+    const html = (await response.text()).slice(0, 2_000_000);
+    const parsed = MatchMakerPositionParser.parseProfileHtml(html, { platform, profileUrl: url.toString() });
+    if (!parsed.success) {
+      await report(false, null, platform, parsed.error || 'Position konnte nicht ausgelesen werden.');
+      return;
+    }
+
+    await report(true, parsed.data, platform, null);
+    console.log(`[Positionsabgleich] ${job.candidate_name} im Hintergrund geprüft (${platform}).`);
   } catch (error) {
     console.error('[Positionsabgleich] Fehler:', error.message);
     try {
@@ -58,11 +86,13 @@ runPositionCheck = async function(job, apiBase, token) {
       console.error('[Positionsabgleich] Rückmeldung fehlgeschlagen:', reportError.message);
     }
   } finally {
-    if (tab?.id) {
-      try { await chrome.tabs.remove(tab.id); } catch (e) {}
-    }
-    // A position check is an interactive ESOS task, not outreach. Continue quickly
-    // with the next queued profile without consuming outreach daily limits.
-    setTimeout(() => processNextJob(), 1200);
+    // Position checks are not outreach jobs. Continue quickly without consuming
+    // outreach limits or opening any provider tab.
+    setTimeout(() => processNextJob(), 500);
   }
 };
+
+// Refresh the connection immediately after install/reload and pick up an
+// already queued interactive check without waiting for the next alarm tick.
+sendHeartbeat();
+setTimeout(() => processNextJob(), 250);
