@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MatchMaker BOOT",
-  "version": "3.8.1",
+  "version": "3.8.2",
   "description": "LinkedIn/XING Profil-Import, Netzwerk-Projekte, tabloser Positionsabgleich, Outreach und Social Publishing über die angemeldete Browser-Sitzung.",
   "permissions": [
     "storage",
@@ -49,6 +49,7 @@
         "https://*.xing.com/*"
       ],
       "js": [
+        "xing-search-location.js",
         "content.js"
       ]
     }
