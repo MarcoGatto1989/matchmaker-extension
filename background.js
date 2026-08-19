@@ -1,4 +1,4 @@
-// background.js — MatchMaker BOOT Extension v3.5 Service Worker
+// background.js — MatchMaker BOOT Extension v3.6 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
@@ -119,7 +119,7 @@ async function processNextJob() {
   // Outreach-Arbeitszeiten, Tageslimits oder Zufallswartezeiten blockiert werden.
   isProcessing = true;
   try {
-    for (const priorityType of ['position_check', 'scout_search']) {
+    for (const priorityType of ['position_check', 'scout_search', 'platform_project_add']) {
       const priorityResponse = await safeFetch(
         `${apiBase}/api/outreach-ext/jobs/queued?limit=1&job_type=${priorityType}`,
         { headers: { 'Authorization': 'Bearer ' + token } }
@@ -128,7 +128,8 @@ async function processNextJob() {
       const priorityJobs = await priorityResponse.json();
       if (!priorityJobs || priorityJobs.length === 0) continue;
       if (priorityType === 'position_check') await runPositionCheck(priorityJobs[0], apiBase, token);
-      else await runScoutSearch(priorityJobs[0], apiBase, token);
+      else if (priorityType === 'scout_search') await runScoutSearch(priorityJobs[0], apiBase, token);
+      else await runPlatformProjectAdd(priorityJobs[0], apiBase, token);
       return;
     }
   } catch (e) {
@@ -180,6 +181,12 @@ async function processNextJob() {
     // ── Positionsabgleich: known LinkedIn/XING profile, read live profile data ──
     if (job.job_type === 'position_check' && job.payload) {
       await runPositionCheck(job, apiBase, token);
+      return;
+    }
+
+    // ── Netzwerk-Projekt: save a known candidate into Recruiter/TalentManager ──
+    if (job.job_type === 'platform_project_add' && job.payload) {
+      await runPlatformProjectAdd(job, apiBase, token);
       return;
     }
 
@@ -447,6 +454,67 @@ async function runPositionCheck(job, apiBase, token) {
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch (e) {}
     }
+  }
+}
+
+// ── Social Finder: assign profiles to provider projects ────────────────
+async function runPlatformProjectAdd(job, apiBase, token) {
+  const payload = job.payload || {};
+  const profileUrl = payload.profileUrl || job.linkedin_url;
+  const network = payload.network || (String(profileUrl).includes('xing.com') ? 'xing' : 'linkedin');
+  let tab;
+
+  try {
+    const validProfile = network === 'xing'
+      ? /^https:\/\/(www\.)?xing\.com\//i.test(String(profileUrl || ''))
+      : /^https:\/\/(www\.)?linkedin\.com\//i.test(String(profileUrl || ''));
+    if (!validProfile) throw new Error(`Ungültiger ${network === 'xing' ? 'XING' : 'LinkedIn'}-Profillink.`);
+    if (!String(payload.projectName || '').trim()) throw new Error('Projektname fehlt.');
+
+    tab = await chrome.tabs.create({ url: profileUrl, active: false });
+    try {
+      await waitForTabReady(tab.id, 25000);
+    } catch (error) {
+      console.warn('[Netzwerk-Projekt] Tab-Ready nicht bestätigt:', error.message);
+    }
+    await new Promise(resolve => setTimeout(resolve, 4000));
+
+    const response = await new Promise(resolve => {
+      const timer = setTimeout(() => resolve({ success: false, error: 'Zeitüberschreitung beim Einsortieren in das Netzwerk-Projekt.' }), 35000);
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'ADD_TO_PLATFORM_PROJECT',
+        payload: {
+          network,
+          profile_url: profileUrl,
+          project_name: payload.projectName,
+          project_url: payload.projectUrl || '',
+          target_system: payload.targetSystem || '',
+        },
+      }, result => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
+        else resolve(result || { success: false, error: 'Keine Antwort von der Plattformseite.' });
+      });
+    });
+
+    await completeJob(
+      job.id,
+      apiBase,
+      token,
+      response.success ? 'completed' : 'failed',
+      response.success ? null : (response.error || 'Einsortierung fehlgeschlagen.'),
+    );
+    if (response.success) console.log(`[Netzwerk-Projekt] ${job.candidate_name} in „${payload.projectName}“ einsortiert.`);
+  } catch (error) {
+    console.error('[Netzwerk-Projekt] Fehler:', error.message);
+    await completeJob(job.id, apiBase, token, 'failed', error.message || 'Einsortierung fehlgeschlagen.');
+  } finally {
+    if (tab?.id) {
+      try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    }
+    // Diese Jobs gehören zur interaktiven ESOS-Verarbeitung und sollen die Liste
+    // unabhängig von Outreach-Limits zügig abarbeiten.
+    setTimeout(() => processNextJob(), 1200);
   }
 }
 
