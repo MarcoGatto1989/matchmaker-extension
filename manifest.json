@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MatchMaker BOOT",
-  "version": "3.6.0",
-  "description": "LinkedIn/XING Profil-Import, Netzwerk-Projekte, Positionsabgleich, Outreach und Social Publishing über die angemeldete Browser-Sitzung.",
+  "version": "3.7.0",
+  "description": "LinkedIn/XING Profil-Import, Netzwerk-Projekte, tabloser Positionsabgleich, Outreach und Social Publishing über die angemeldete Browser-Sitzung.",
   "permissions": [
     "storage",
     "activeTab",
@@ -12,7 +12,9 @@
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
+    "https://*.linkedin.com/*",
     "https://www.xing.com/*",
+    "https://*.xing.com/*",
     "https://executive-sphere-production.up.railway.app/*",
     "https://boot-outreach-api-production.up.railway.app/*"
   ],
