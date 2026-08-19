@@ -1,5 +1,6 @@
-// manual-import-fixes.js — MatchMaker BOOT v3.8.1
-// Hotfix for manual LinkedIn/XING import only. Background workers remain unchanged.
+// manual-import-fixes.js — MatchMaker BOOT v3.8.3
+// Verbesserungen nur für den manuellen LinkedIn/XING-Import.
+// Background-Worker, Netzwerk-Projekte, Positionscheck und Outreach bleiben unverändert.
 
 (function () {
   'use strict';
@@ -7,22 +8,50 @@
   const BADGE_SUFFIX_RE = /(?:basis|basic|premium|professional|business)$/i;
   const BADGE_PRO_RE = /(?:\s+pro)$/i;
 
-  function clean381(value) {
+  function clean383(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
-  function stripBadge381(value) {
-    const original = clean381(value);
+  function stripBadge383(value) {
+    const original = clean383(value);
     if (!original) return '';
     const stripped = original.replace(BADGE_SUFFIX_RE, '').replace(BADGE_PRO_RE, '').trim();
     return stripped || original;
   }
 
-  function fixScrapedName381() {
+  function normalizeGender383(value) {
+    const normalized = clean383(value).toLowerCase();
+    if (!normalized || normalized === 'keine angabe') return '';
+    if (/^(m|male|männlich|maennlich|herr|mr\.?|he\/him|er\/ihm)$/.test(normalized)) return 'männlich';
+    if (/^(w|f|female|weiblich|frau|ms\.?|mrs\.?|she\/her|sie\/ihr)$/.test(normalized)) return 'weiblich';
+    if (/^(divers|diverse|non[- ]?binary|nicht[- ]?binär|nicht[- ]?binaer|they\/them|mx\.?)$/.test(normalized)) return 'divers';
+    return '';
+  }
+
+  function applyGender383(value, source) {
+    const gender = normalizeGender383(value);
+    const select = document.getElementById('candidate-gender');
+    if (!gender || !select) return false;
+
+    const current = normalizeGender383(select.value);
+    if (current) return false;
+
+    select.value = gender;
+    select.title = source
+      ? `Automatisch übernommen aus: ${source}`
+      : 'Automatisch aus einer eindeutigen vorhandenen Angabe übernommen.';
+
+    if (typeof scrapedData !== 'undefined' && scrapedData && !scrapedData.gender) {
+      scrapedData.gender = gender;
+    }
+    return true;
+  }
+
+  function fixScrapedName383() {
     if (typeof scrapedData === 'undefined' || !scrapedData) return false;
 
-    const correctedLastName = stripBadge381(scrapedData.lastName);
-    const correctedFirstName = clean381(scrapedData.firstName);
+    const correctedLastName = stripBadge383(scrapedData.lastName);
+    const correctedFirstName = clean383(scrapedData.firstName);
 
     if (correctedLastName && correctedLastName !== scrapedData.lastName) {
       scrapedData.lastName = correctedLastName;
@@ -36,14 +65,14 @@
 
     const nameEl = document.getElementById('profile-name');
     if (nameEl) {
-      const title = clean381(scrapedData.academicTitle);
+      const title = clean383(scrapedData.academicTitle);
       nameEl.textContent = [title, correctedFirstName, correctedLastName].filter(Boolean).join(' ');
     }
 
     return Boolean(correctedFirstName || correctedLastName);
   }
 
-  function setDuplicateBox381(kind, title, text) {
+  function setDuplicateBox383(kind, title, text) {
     const box = document.getElementById('duplicate-warning');
     if (!box) return;
     box.style.display = 'block';
@@ -72,7 +101,7 @@
     if (textEl) textEl.textContent = text;
   }
 
-  async function openExistingContact381(contactId) {
+  async function openExistingContact383(contactId) {
     if (!contactId || typeof getSettings !== 'function' || typeof getEsosUrl !== 'function') return;
     const button = document.getElementById('import-open-btn');
     if (!button) return;
@@ -83,15 +112,27 @@
     button.onclick = () => chrome.tabs.create({ url: `${base}/contacts/${contactId}` });
   }
 
-  async function duplicateCheck381() {
+  async function applyExistingGender383(contactId, fallbackGender) {
+    if (applyGender383(fallbackGender, 'vorhandener ESOS-Datensatz')) return;
+    if (!contactId || typeof esosApi !== 'function') return;
+
+    try {
+      const response = await esosApi(`/api/contacts/${contactId}`);
+      if (!response.ok) return;
+      const contact = await response.json();
+      applyGender383(contact?.gender, 'vorhandener ESOS-Datensatz');
+    } catch (_) {}
+  }
+
+  async function duplicateCheck383() {
     if (typeof esosApi !== 'function' || typeof readEditableProfile !== 'function') return;
 
     const data = readEditableProfile();
-    data.lastName = stripBadge381(data.lastName);
+    data.lastName = stripBadge383(data.lastName);
 
     const importButton = document.getElementById('import-btn');
     if (importButton) importButton.disabled = true;
-    setDuplicateBox381('checking', '🔎 Duplikatprüfung', 'Prüfe XING/LinkedIn-Link, E-Mail und Name gegen ESOS …');
+    setDuplicateBox383('checking', '🔎 Duplikatprüfung', 'Prüfe XING/LinkedIn-Link, E-Mail und Name gegen ESOS …');
 
     try {
       let response = await esosApi('/api/extension/check-duplicate', {
@@ -122,12 +163,13 @@
           isDuplicate: true,
           matchedBy: 'Name',
           contactId: existing.id,
-          contactName: `${existing.firstName || ''} ${existing.lastName || ''}`.trim()
+          contactName: `${existing.firstName || ''} ${existing.lastName || ''}`.trim(),
+          gender: existing.gender
         } : { isDuplicate: false };
       }
 
       if (result?.isDuplicate) {
-        setDuplicateBox381(
+        setDuplicateBox383(
           'duplicate',
           '⚠️ Kandidat bereits in ESOS',
           `${result.contactName || 'Vorhandener Kontakt'}${result.matchedBy ? ` · Treffer über ${result.matchedBy}` : ''}. Es wird kein zweiter Datensatz angelegt.`
@@ -136,83 +178,116 @@
           importButton.disabled = false;
           importButton.textContent = '🔄 Bestehenden ESOS-Kontakt aktualisieren';
         }
-        await openExistingContact381(result.contactId);
+        await Promise.all([
+          openExistingContact383(result.contactId),
+          applyExistingGender383(result.contactId, result.gender)
+        ]);
       } else {
-        setDuplicateBox381('ok', '✅ Kein Duplikat gefunden', 'XING/LinkedIn-Link, E-Mail und Name wurden gegen ESOS geprüft.');
+        setDuplicateBox383('ok', '✅ Kein Duplikat gefunden', 'XING/LinkedIn-Link, E-Mail und Name wurden gegen ESOS geprüft.');
         if (importButton) {
           importButton.disabled = false;
           importButton.textContent = '📥 In ESOS übernehmen';
         }
       }
     } catch (error) {
-      setDuplicateBox381('error', '⚠️ Duplikatprüfung fehlgeschlagen', `${error.message}. Import ist sicherheitshalber gesperrt.`);
+      setDuplicateBox383('error', '⚠️ Duplikatprüfung fehlgeschlagen', `${error.message}. Import ist sicherheitshalber gesperrt.`);
       if (importButton) importButton.disabled = true;
     }
   }
 
-  let opportunities381 = [];
+  async function deriveExplicitProfileGender383() {
+    const select = document.getElementById('candidate-gender');
+    if (!select || normalizeGender383(select.value)) return;
 
-  function accountKey381(item) {
-    return item.accountId || clean381(item.accountName) || '__ohne_mandant__';
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !/linkedin\.com|xing\.com/i.test(tab.url || '')) return;
+
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+          const classify = value => {
+            const text = clean(value).toLowerCase();
+            if (/\b(he\s*\/\s*him|er\s*\/\s*ihm)\b/i.test(text)) return 'männlich';
+            if (/\b(she\s*\/\s*her|sie\s*\/\s*ihr)\b/i.test(text)) return 'weiblich';
+            if (/\b(they\s*\/\s*them)\b|nicht[- ]?binär|non[- ]?binary/i.test(text)) return 'divers';
+            if (/^(herr|mr\.?)$/i.test(text)) return 'männlich';
+            if (/^(frau|ms\.?|mrs\.?)$/i.test(text)) return 'weiblich';
+            if (/^mx\.?$/i.test(text)) return 'divers';
+            return '';
+          };
+
+          const candidates = [];
+          document.querySelectorAll('[aria-label], [data-qa], [class]').forEach(element => {
+            const marker = `${element.getAttribute('aria-label') || ''} ${element.getAttribute('data-qa') || ''} ${element.className || ''}`;
+            if (/pronoun|pronomen/i.test(marker)) {
+              candidates.push(element.getAttribute('aria-label') || '');
+              candidates.push(element.textContent || '');
+            }
+          });
+
+          const h1 = document.querySelector('main h1, h1');
+          if (h1) {
+            let scope = h1.parentElement;
+            for (let i = 0; i < 3 && scope; i += 1, scope = scope.parentElement) {
+              candidates.push(scope.innerText || '');
+            }
+
+            const name = clean(h1.textContent).replace(/(?:Basis|Basic|Premium|Professional|Business)$/i, '').trim();
+            if (name) {
+              const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const nearby = clean(h1.parentElement?.parentElement?.innerText || '');
+              if (new RegExp(`\\bHerr\\s+${escaped}\\b`, 'i').test(nearby)) return { gender: 'männlich', evidence: 'explizite Anrede auf dem Profil' };
+              if (new RegExp(`\\bFrau\\s+${escaped}\\b`, 'i').test(nearby)) return { gender: 'weiblich', evidence: 'explizite Anrede auf dem Profil' };
+            }
+          }
+
+          for (const candidate of candidates) {
+            const gender = classify(candidate);
+            if (gender) return { gender, evidence: 'explizite Pronomen/Anrede auf dem Profil' };
+          }
+          return { gender: '', evidence: '' };
+        }
+      });
+
+      const result = results?.[0]?.result;
+      if (result?.gender) applyGender383(result.gender, result.evidence || 'explizite Profilangabe');
+    } catch (_) {}
   }
 
-  function renderProjects381() {
-    const accountSelect = document.getElementById('account-select');
+  let opportunities383 = [];
+
+  function renderProjects383() {
     const opportunitySelect = document.getElementById('opportunity-select');
-    if (!accountSelect || !opportunitySelect) return;
+    if (!opportunitySelect) return;
 
-    const selectedAccount = accountSelect.value;
-    const filtered = selectedAccount
-      ? opportunities381.filter(item => accountKey381(item) === selectedAccount)
-      : opportunities381;
+    const previous = opportunitySelect.value;
+    opportunitySelect.innerHTML = '<option value="">— Ohne Projektzuordnung speichern —</option>';
 
-    opportunitySelect.innerHTML = '<option value="">— Kein Suchprojekt / Mandat —</option>';
-    filtered.forEach(item => {
+    opportunities383.forEach(item => {
       const option = document.createElement('option');
       option.value = item.id;
       option.textContent = [
-        clean381(item.accountName),
-        clean381(item.mandateNumber),
-        clean381(item.soughtRole || item.name)
+        clean383(item.mandateNumber),
+        clean383(item.soughtRole || item.name),
+        clean383(item.accountName)
       ].filter(Boolean).join(' · ') || item.id;
       opportunitySelect.appendChild(option);
     });
+
+    if (previous && opportunities383.some(item => item.id === previous)) {
+      opportunitySelect.value = previous;
+    }
   }
 
-  function renderAccounts381() {
-    const accountSelect = document.getElementById('account-select');
-    if (!accountSelect) return;
-
-    const accounts = new Map();
-    opportunities381.forEach(item => {
-      const key = accountKey381(item);
-      const label = clean381(item.accountName) || 'Ohne Mandant/Kunde';
-      if (!accounts.has(key)) accounts.set(key, label);
-    });
-
-    accountSelect.innerHTML = '<option value="">— Alle Mandanten / Kunden —</option>';
-    [...accounts.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], 'de'))
-      .forEach(([key, label]) => {
-        const option = document.createElement('option');
-        option.value = key;
-        option.textContent = label;
-        accountSelect.appendChild(option);
-      });
-
-    accountSelect.disabled = false;
-    accountSelect.onchange = renderProjects381;
-  }
-
-  async function loadProjects381() {
+  async function loadProjects383() {
     if (typeof esosApi !== 'function') return;
 
-    const accountSelect = document.getElementById('account-select');
     const opportunitySelect = document.getElementById('opportunity-select');
     const status = document.getElementById('project-status');
-    if (!accountSelect || !opportunitySelect) return;
+    if (!opportunitySelect) return;
 
-    accountSelect.disabled = true;
     opportunitySelect.disabled = true;
     if (status) status.textContent = 'Lade aktive Suchprojekte aus ESOS …';
 
@@ -229,24 +304,24 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = await response.json();
-      opportunities381 = (Array.isArray(data) ? data : []).filter(item => item?.id);
+      opportunities383 = (Array.isArray(data) ? data : []).filter(item => item?.id);
 
-      renderAccounts381();
-      renderProjects381();
+      renderProjects383();
       opportunitySelect.disabled = false;
-      if (status) status.textContent = opportunities381.length
-        ? `${opportunities381.length} aktive Suchprojekte geladen.`
-        : 'Keine aktiven Suchprojekte gefunden.';
+      if (status) status.textContent = opportunities383.length
+        ? `${opportunities383.length} aktive Suchprojekte geladen. Auswahl ist optional.`
+        : 'Keine aktiven Suchprojekte gefunden. Der Kandidat kann trotzdem ohne Zuordnung gespeichert werden.';
     } catch (error) {
-      accountSelect.innerHTML = '<option value="">— Mandanten konnten nicht geladen werden —</option>';
-      opportunitySelect.innerHTML = '<option value="">— Suchprojekte konnten nicht geladen werden —</option>';
-      if (status) status.textContent = `⚠️ ${error.message}`;
+      opportunitySelect.innerHTML = '<option value="">— Ohne Projektzuordnung speichern —</option>';
+      opportunitySelect.disabled = false;
+      if (status) status.textContent = `⚠️ Suchprojekte konnten nicht geladen werden (${error.message}). Speichern ohne Zuordnung ist weiterhin möglich.`;
     }
   }
 
-  async function apply381() {
-    if (!fixScrapedName381()) return false;
-    await Promise.all([duplicateCheck381(), loadProjects381()]);
+  async function apply383() {
+    if (!fixScrapedName383()) return false;
+    await Promise.all([duplicateCheck383(), loadProjects383()]);
+    await deriveExplicitProfileGender383();
     return true;
   }
 
@@ -256,7 +331,7 @@
     const ready = typeof scrapedData !== 'undefined' && scrapedData;
     if (ready) {
       clearInterval(timer);
-      await apply381();
+      await apply383();
     } else if (attempts >= 20) {
       clearInterval(timer);
     }
@@ -265,7 +340,7 @@
   const scrapeButton = document.getElementById('scrape-btn');
   if (scrapeButton) {
     scrapeButton.addEventListener('click', () => {
-      setTimeout(() => apply381(), 900);
+      setTimeout(() => apply383(), 900);
     });
   }
 })();
