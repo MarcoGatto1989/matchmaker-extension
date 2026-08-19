@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MatchMaker BOOT",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "description": "LinkedIn/XING Profil-Import, Positionsabgleich, Outreach und Social Publishing über die angemeldete Browser-Sitzung.",
   "permissions": [
     "storage",
@@ -25,7 +25,7 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background-worker.js"
   },
   "content_scripts": [
     {
