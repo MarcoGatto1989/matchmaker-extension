@@ -1,4 +1,4 @@
-// background.js — MatchMaker BOOT Extension v3.4 Service Worker
+// background.js — MatchMaker BOOT Extension v3.5 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
@@ -115,23 +115,24 @@ async function processNextJob() {
     await fetchConfig(apiBase, token);
   }
 
-  // Manuell gestartete KandiScout-Suchen haben Vorrang und dürfen nicht durch
+  // Interaktive ESOS-Aufträge haben Vorrang und dürfen nicht durch
   // Outreach-Arbeitszeiten, Tageslimits oder Zufallswartezeiten blockiert werden.
   isProcessing = true;
   try {
-    const scoutResponse = await safeFetch(
-      `${apiBase}/api/outreach-ext/jobs/queued?limit=1&job_type=scout_search`,
-      { headers: { 'Authorization': 'Bearer ' + token } }
-    );
-    if (scoutResponse.ok) {
-      const scoutJobs = await scoutResponse.json();
-      if (scoutJobs && scoutJobs.length > 0) {
-        await runScoutSearch(scoutJobs[0], apiBase, token);
-        return;
-      }
+    for (const priorityType of ['position_check', 'scout_search']) {
+      const priorityResponse = await safeFetch(
+        `${apiBase}/api/outreach-ext/jobs/queued?limit=1&job_type=${priorityType}`,
+        { headers: { 'Authorization': 'Bearer ' + token } }
+      );
+      if (!priorityResponse.ok) continue;
+      const priorityJobs = await priorityResponse.json();
+      if (!priorityJobs || priorityJobs.length === 0) continue;
+      if (priorityType === 'position_check') await runPositionCheck(priorityJobs[0], apiBase, token);
+      else await runScoutSearch(priorityJobs[0], apiBase, token);
+      return;
     }
   } catch (e) {
-    console.warn('[Scout] Sofortabruf fehlgeschlagen:', e.message);
+    console.warn('[BOOT] Sofortabruf fehlgeschlagen:', e.message);
   } finally {
     isProcessing = false;
   }
@@ -173,6 +174,12 @@ async function processNextJob() {
     // ── KandiScout search job: open search URL, scrape result list ──
     if (job.job_type === 'scout_search' && job.payload) {
       await runScoutSearch(job, apiBase, token);
+      return;
+    }
+
+    // ── Positionsabgleich: known LinkedIn/XING profile, read live profile data ──
+    if (job.job_type === 'position_check' && job.payload) {
+      await runPositionCheck(job, apiBase, token);
       return;
     }
 
@@ -218,10 +225,14 @@ async function processNextJob() {
 // ── Alarm-based scheduling ─────────────────────────────────────────────
 
 chrome.alarms.create('processJobs', { periodInMinutes: 2 });
+chrome.alarms.create('priorityJobs', { periodInMinutes: 1 });
 chrome.alarms.create('heartbeat', { periodInMinutes: 5 });
 chrome.alarms.create('resetDaily', { periodInMinutes: 60 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'priorityJobs') {
+    await processNextJob();
+  }
   if (alarm.name === 'processJobs') {
     const delay = randomDelay();
     setTimeout(() => processNextJob(), delay);
@@ -314,6 +325,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ── Initial heartbeat ──────────────────────────────────────────────────
 sendHeartbeat();
+processNextJob();
 
 
 // ── KandiScout: execute a people-search and report results ─────────────
@@ -372,6 +384,69 @@ async function runScoutSearch(job, apiBase, token) {
     });
   } catch (e) {
     console.error('[Scout] Fehler:', e.message);
+  }
+}
+
+// ── Positionsabgleich: read a known LinkedIn/XING profile live ─────────
+async function runPositionCheck(job, apiBase, token) {
+  const payload = job.payload || {};
+  const profileUrl = payload.profileUrl || job.linkedin_url;
+  let tab;
+
+  const report = async (success, data = null, platform = null, error = null) => {
+    const response = await safeFetch(`${apiBase}/api/position-check/extension/results`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ jobId: job.id, success, data, platform, error }),
+    }, 15000);
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`ESOS-Rückgabe fehlgeschlagen (${response.status}) ${detail}`.trim());
+    }
+  };
+
+  try {
+    if (!/^https:\/\/(www\.)?(linkedin\.com|xing\.com)\//i.test(String(profileUrl || ''))) {
+      await report(false, null, null, 'Ungültiger LinkedIn-/XING-Profillink.');
+      return;
+    }
+
+    tab = await chrome.tabs.create({ url: profileUrl, active: false });
+    try {
+      await waitForTabReady(tab.id, 25000);
+    } catch (error) {
+      // SPAs can already be usable even if the tab update event was missed.
+      console.warn('[Positionsabgleich] Tab-Ready nicht bestätigt:', error.message);
+    }
+    await new Promise(resolve => setTimeout(resolve, 4500));
+
+    const scraped = await new Promise(resolve => {
+      const timer = setTimeout(() => resolve({ success: false, error: 'Zeitüberschreitung beim Auslesen des Profils.' }), 25000);
+      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_PROFILE' }, result => {
+        clearTimeout(timer);
+        if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
+        else resolve(result || { success: false, error: 'Keine Antwort vom Profil-Scraper.' });
+      });
+    });
+
+    if (!scraped.success) {
+      await report(false, null, scraped.platform || null, scraped.error || 'Profil konnte nicht ausgelesen werden.');
+      return;
+    }
+
+    await report(true, scraped.data || {}, scraped.platform || payload.network || null, null);
+    console.log(`[Positionsabgleich] ${job.candidate_name} live geprüft (${scraped.platform || payload.network || 'Profil'}).`);
+  } catch (error) {
+    console.error('[Positionsabgleich] Fehler:', error.message);
+    try {
+      await report(false, null, payload.network || null, error.message || 'Positionsprüfung fehlgeschlagen.');
+    } catch (reportError) {
+      console.error('[Positionsabgleich] Rückmeldung fehlgeschlagen:', reportError.message);
+    }
+  } finally {
+    if (tab?.id) {
+      try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    }
   }
 }
 
