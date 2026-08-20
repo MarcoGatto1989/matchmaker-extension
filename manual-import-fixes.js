@@ -1,4 +1,4 @@
-// manual-import-fixes.js — ESOS AI v3.8.3
+// manual-import-fixes.js — ESOS AI v4.0.4
 // Verbesserungen nur für den manuellen LinkedIn/XING-Import.
 // Background-Worker, Netzwerk-Projekte, Positionscheck und Outreach bleiben unverändert.
 
@@ -26,6 +26,212 @@
     if (/^(w|f|female|weiblich|frau|ms\.?|mrs\.?|she\/her|sie\/ihr)$/.test(normalized)) return 'weiblich';
     if (/^(divers|diverse|non[- ]?binary|nicht[- ]?binär|nicht[- ]?binaer|they\/them|mx\.?)$/.test(normalized)) return 'divers';
     return '';
+  }
+
+  function safePhotoUrl383(value) {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:') return '';
+      const lower = url.toString().toLowerCase();
+      if (/ghost|default[-_ ]?avatar|favicon|company[-_ ]?logo|banner|sprite|icon/.test(lower)) return '';
+      return url.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function renderProfilePhoto383(rawUrl, sourceText) {
+    const card = document.querySelector('#import-profile .profile-card');
+    if (!card) return;
+
+    let row = document.getElementById('esos-profile-photo-preview');
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'esos-profile-photo-preview';
+      row.style.display = 'none';
+      row.style.alignItems = 'center';
+      row.style.gap = '11px';
+      row.style.marginBottom = '11px';
+      row.style.paddingBottom = '11px';
+      row.style.borderBottom = '1px solid #eef2f7';
+
+      const image = document.createElement('img');
+      image.id = 'esos-profile-photo-preview-image';
+      image.alt = 'Profilbild';
+      image.style.width = '68px';
+      image.style.height = '68px';
+      image.style.flex = '0 0 68px';
+      image.style.objectFit = 'cover';
+      image.style.borderRadius = '14px';
+      image.style.border = '1px solid #e2e8f0';
+      image.style.background = '#f8fafc';
+
+      const copy = document.createElement('div');
+      copy.style.minWidth = '0';
+      const title = document.createElement('div');
+      title.id = 'esos-profile-photo-preview-title';
+      title.style.fontSize = '11px';
+      title.style.fontWeight = '800';
+      title.style.color = '#166534';
+      const detail = document.createElement('div');
+      detail.id = 'esos-profile-photo-preview-detail';
+      detail.style.marginTop = '3px';
+      detail.style.fontSize = '9px';
+      detail.style.lineHeight = '1.35';
+      detail.style.color = '#64748b';
+      copy.append(title, detail);
+      row.append(image, copy);
+      card.insertBefore(row, card.firstChild);
+    }
+
+    const url = safePhotoUrl383(rawUrl);
+    const image = document.getElementById('esos-profile-photo-preview-image');
+    const title = document.getElementById('esos-profile-photo-preview-title');
+    const detail = document.getElementById('esos-profile-photo-preview-detail');
+
+    if (!url) {
+      row.style.display = 'none';
+      return;
+    }
+
+    row.style.display = 'flex';
+    if (title) title.textContent = '✓ Profilbild erkannt';
+    if (detail) detail.textContent = sourceText || 'Direkt aus dem geöffneten Social-Media-Profil gelesen.';
+    if (image) {
+      image.style.opacity = '1';
+      image.src = url;
+      image.onerror = () => {
+        image.style.opacity = '.35';
+        if (title) title.textContent = '✓ Profilbild erkannt · Vorschau blockiert';
+        if (detail) detail.textContent = 'Die Bildadresse wurde aus dem Profil gelesen; der Anbieter blockiert nur die Popup-Vorschau.';
+      };
+    }
+  }
+
+  async function syncProfilePhoto383() {
+    if (typeof scrapedData === 'undefined' || !scrapedData) return false;
+
+    const existing = safePhotoUrl383(scrapedData.profilePhoto);
+    if (existing) renderProfilePhoto383(existing, 'Vom ESOS-Profilparser erkannt.');
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !/linkedin\.com|xing\.com/i.test(tab.url || '')) return Boolean(existing);
+
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+          const provider = location.hostname.includes('linkedin.com')
+            ? 'linkedin'
+            : location.hostname.includes('xing.com') ? 'xing' : '';
+          const name = clean(document.querySelector('main h1, h1')?.textContent).toLowerCase();
+          const bad = /ghost|default[-_ ]?avatar|favicon|company[-_ ]?logo|\blogo\b|banner|sprite|icon/i;
+
+          const normalize = raw => {
+            try {
+              const url = new URL(String(raw || ''), location.href);
+              return url.protocol === 'https:' ? url.toString() : '';
+            } catch (_) {
+              return '';
+            }
+          };
+
+          const knownHost = raw => {
+            try {
+              const host = new URL(raw).hostname.toLowerCase();
+              return provider === 'linkedin'
+                ? (host.endsWith('licdn.com') || host.endsWith('linkedin.com'))
+                : (host.includes('xing') || host.endsWith('ctfassets.net') || host.endsWith('xingassets.com'));
+            } catch (_) {
+              return false;
+            }
+          };
+
+          const backgroundUrl = element => {
+            const value = getComputedStyle(element).backgroundImage || '';
+            const match = value.match(/url\(["']?([^"')]+)["']?\)/i);
+            return normalize(match?.[1]);
+          };
+
+          const score = (element, url, alt = '') => {
+            if (!url || bad.test(`${url} ${alt} ${element.className || ''}`)) return -1000;
+            const rect = element.getBoundingClientRect();
+            const naturalWidth = element instanceof HTMLImageElement ? element.naturalWidth : 0;
+            const naturalHeight = element instanceof HTMLImageElement ? element.naturalHeight : 0;
+            const width = rect.width || naturalWidth || 0;
+            const height = rect.height || naturalHeight || 0;
+            if (width < 48 || height < 48) return -1000;
+            let points = 0;
+            const ratio = width / Math.max(1, height);
+            if (ratio >= .72 && ratio <= 1.38) points += 7;
+            if (width >= 80 && height >= 80) points += 4;
+            if (width >= 120 && height >= 120) points += 2;
+            if (rect.top >= -120 && rect.top <= 900) points += 5;
+            if (rect.left >= -20 && rect.left <= Math.max(window.innerWidth * .72, 850)) points += 2;
+            if (knownHost(url)) points += 5;
+            const altText = clean(alt).toLowerCase();
+            if (name && altText && (altText.includes(name) || name.includes(altText))) points += 10;
+            if (element.matches?.('[data-esos-profile-photo="true"]')) points += 25;
+            if (element.closest?.('nav, [role="navigation"], footer')) points -= 12;
+            return points;
+          };
+
+          let best = { url: '', points: -1000, element: null, kind: '' };
+          const consider = (element, url, alt, kind) => {
+            const normalized = normalize(url);
+            const points = score(element, normalized, alt);
+            if (points > best.points) best = { url: normalized, points, element, kind };
+          };
+
+          const marked = document.querySelector('[data-esos-profile-photo="true"]');
+          if (marked) {
+            const markedUrl = normalize(marked.getAttribute('data-esos-profile-photo-src'))
+              || (marked instanceof HTMLImageElement ? normalize(marked.currentSrc || marked.src) : '')
+              || backgroundUrl(marked);
+            consider(marked, markedUrl, marked.getAttribute('alt') || '', 'markiert');
+          }
+
+          for (const img of Array.from(document.querySelectorAll('main img, [role="main"] img, article img, section img')).slice(0, 700)) {
+            let url = normalize(img.currentSrc || img.src);
+            if (!url) {
+              const srcset = String(img.getAttribute('srcset') || '').split(',').map(part => part.trim().split(/\s+/)[0]).filter(Boolean);
+              url = normalize(srcset[srcset.length - 1]);
+            }
+            consider(img, url, img.alt || '', 'Bild im gerenderten Profil');
+          }
+
+          const backgroundCandidates = Array.from(document.querySelectorAll('main *, [role="main"] *')).slice(0, 1400);
+          for (const element of backgroundCandidates) {
+            const url = backgroundUrl(element);
+            if (url) consider(element, url, element.getAttribute('aria-label') || '', 'gerendertes Hintergrundbild');
+          }
+
+          if (!best.url || best.points < 6 || !best.element) return { url: '', source: '' };
+          try {
+            document.querySelectorAll('[data-esos-profile-photo="true"]').forEach(node => {
+              if (node !== best.element) node.removeAttribute('data-esos-profile-photo');
+            });
+            best.element.setAttribute('data-esos-profile-photo', 'true');
+            best.element.setAttribute('data-esos-profile-photo-src', best.url);
+            if (best.element instanceof HTMLImageElement) {
+              best.element.classList.add('headstone-image', 'pv-top-card-profile-picture__image', 'pv-top-card-profile-picture__image--show');
+            }
+          } catch (_) {}
+          return { url: best.url, source: best.kind || 'gerendertes Profil', score: best.points };
+        }
+      });
+
+      const result = results?.[0]?.result;
+      const url = safePhotoUrl383(result?.url);
+      if (!url) return Boolean(existing);
+
+      scrapedData.profilePhoto = url;
+      renderProfilePhoto383(url, `Direkt aus ${activeProfilePlatform === 'linkedin' ? 'LinkedIn' : 'XING'} gelesen (${result?.source || 'gerendertes Profil'}).`);
+      return true;
+    } catch (_) {
+      return Boolean(existing);
+    }
   }
 
   function applyGender383(value, source) {
@@ -320,6 +526,7 @@
 
   async function apply383() {
     if (!fixScrapedName383()) return false;
+    await syncProfilePhoto383();
     await Promise.all([duplicateCheck383(), loadProjects383()]);
     await deriveExplicitProfileGender383();
     return true;
