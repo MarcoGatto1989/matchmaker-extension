@@ -1,6 +1,6 @@
-# MatchMaker BOOT — Chrome Extension
+# ESOS AI — Chrome Extension
 
-LinkedIn-/XING-Profilimport, Positionsabgleich, Netzwerk-Projekte, Outreach und Social Publishing über die normale Anmeldesitzung des jeweiligen Anbieters.
+ESOS AI verbindet LinkedIn und XING mit ESOS für Profilimport, Positionsabgleich, Netzwerk-Projekte, Outreach und Social Publishing über die normale Anmeldesitzung des jeweiligen Anbieters.
 
 Die Extension kann Kandidaten mit bereits bestätigtem Profil-Link aus dem ESOS Social Finder automatisch in vorhandene **LinkedIn-Recruiter-Projekte** bzw. **XING-TalentManager-Projekte** einsortieren. Projektname und optional die konkrete Projekt-URL werden von ESOS übergeben, damit das richtige Ziel eindeutig ausgewählt werden kann. Der Positionsabgleich liest ausschließlich die aktuelle Position aus dem gespeicherten Profil-Link: zuerst aus strukturierten Profildaten, dann aus öffentlichen Profil-Metadaten. Er öffnet dabei keine Tabs, führt keine Namens- oder Firmensuche durch und überträgt keine Zugangsdaten an ESOS.
 
@@ -9,7 +9,7 @@ Die Extension kann Kandidaten mit bereits bestätigtem Profil-Link aus dem ESOS 
 1. Chrome öffnen → `chrome://extensions/`
 2. **Entwicklermodus** aktivieren (oben rechts)
 3. **Entpackte Erweiterung laden** → diesen Ordner auswählen
-4. Extension-Icon klicken → Token eingeben
+4. ESOS-AI-Icon klicken → Token eingeben
 
 Nach einem Update des lokalen Extension-Ordners auf eine neue Version in `chrome://extensions/` einmal **Neu laden** klicken.
 
@@ -21,13 +21,13 @@ Nach einem Update des lokalen Extension-Ordners auf eine neue Version in `chrome
 | `background.js` | Service Worker — Kommunikation zwischen Popup, Content-Script und API |
 | `background-worker.js` | Erweiterter Hintergrund-Worker für tablose Positionsprüfungen |
 | `content.js` | LinkedIn-/XING-Automatisierung einschließlich Netzwerk-Projekten und Social Publishing |
-| `popup.html` | Popup-UI für Token-Eingabe |
+| `popup.html` | Moderne ESOS-AI-Oberfläche |
 | `popup.js` | Popup-Logik |
-| `icon*.png` | Extension-Icons (16px, 48px, 128px) |
+| `icon*.png` | ESOS-AI-Extension-Icons (16px, 48px, 128px) |
 
 ## Konfiguration
 
-Die ESOS-URL und der mandantenspezifische Extension-Token werden im Settings-Tab eingetragen. Die feste Extension-ID lautet `mmcadbphcgljgifhgddkbaebkbamlkdm`.
+Die ESOS-URL und der mandantenspezifische Extension-Token werden im Einstellungen-Tab eingetragen. Die feste Extension-ID lautet `mmcadbphcgljgifhgddkbaebkbamlkdm`.
 
 ## Netzwerk-Projekte
 
