@@ -23,15 +23,7 @@ function esosSniffImageMime(buffer) {
   return null;
 }
 
-async function esosReadImageCandidate(imageUrl, network) {
-  const response = await safeFetch(imageUrl, {
-    method: 'GET',
-    credentials: 'include',
-    cache: 'no-store',
-    redirect: 'follow',
-    // Do not request AVIF because the current ESOS API accepts JPEG/PNG/WebP.
-    headers: { Accept: 'image/webp,image/png,image/jpeg,*/*;q=0.4' },
-  }, 15000);
+async function esosReadImageResponse(response, imageUrl, network) {
   if (!response.ok) throw new Error(`${network}: Bild HTTP ${response.status}`);
 
   const declared = Number(response.headers.get('content-length') || 0);
@@ -57,15 +49,38 @@ async function esosReadImageCandidate(imageUrl, network) {
   };
 }
 
+async function esosReadImageCandidate(imageUrl, network) {
+  const errors = [];
+  // CDN images generally do not need provider cookies. Try authenticated first for
+  // protected assets, then without credentials because some CDNs reject cookie-bearing
+  // extension requests although the same image is publicly readable.
+  for (const credentials of ['include', 'omit']) {
+    try {
+      const response = await safeFetch(imageUrl, {
+        method: 'GET',
+        credentials,
+        cache: 'no-store',
+        redirect: 'follow',
+        // Do not request AVIF because the current ESOS API accepts JPEG/PNG/WebP.
+        headers: { Accept: 'image/webp,image/png,image/jpeg,*/*;q=0.4' },
+      }, 15000);
+      return await esosReadImageResponse(response, imageUrl, network);
+    } catch (error) {
+      errors.push(`${credentials}: ${error.message || 'Bildabruf fehlgeschlagen'}`);
+    }
+  }
+  throw new Error(errors.slice(0, 2).join(' | '));
+}
+
 async function esosSendProviderMessage(tabId, message) {
   try {
     return await chrome.tabs.sendMessage(tabId, message);
   } catch (_) {
     // After an extension update, already-open provider tabs may still lack the new bridge.
-    // Inject it on demand, then retry once without requiring a visible tab reload.
+    // Inject both the DOM detector and bridge on demand, then retry once without a reload.
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ['social-photo-content-bridge.js'],
+      files: ['profile-photo-dom-fix.js', 'social-photo-content-bridge.js'],
     });
     return await chrome.tabs.sendMessage(tabId, message);
   }
@@ -81,18 +96,29 @@ async function esosFetchViaProviderTab(target) {
   if (!tabs.length) return { outcome: 'unavailable' };
 
   let targetHost = '';
-  try { targetHost = new URL(target.url).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) {}
+  let targetPath = '';
+  try {
+    const url = new URL(target.url);
+    targetHost = url.hostname.replace(/^www\./, '').toLowerCase();
+    targetPath = url.pathname.replace(/\/$/, '').toLowerCase();
+  } catch (_) {}
+
   tabs.sort((a, b) => {
-    const score = (tab) => {
+    const score = tab => {
       try {
-        const host = new URL(tab.url || '').hostname.replace(/^www\./, '').toLowerCase();
-        return host === targetHost ? 3 : (tab.active ? 2 : 1);
+        const url = new URL(tab.url || '');
+        const host = url.hostname.replace(/^www\./, '').toLowerCase();
+        const path = url.pathname.replace(/\/$/, '').toLowerCase();
+        if (host === targetHost && path === targetPath) return 10;
+        if (host === targetHost && tab.active) return 4;
+        return tab.active ? 2 : 1;
       } catch (_) { return 0; }
     };
     return score(b) - score(a);
   });
 
   const errors = [];
+  let cleanNoPhoto = false;
   for (const tab of tabs.slice(0, 3)) {
     if (!tab.id) continue;
     let result;
@@ -107,7 +133,10 @@ async function esosFetchViaProviderTab(target) {
       continue;
     }
 
-    if (result?.outcome === 'not_found') return { outcome: 'not_found', network: target.network };
+    if (result?.outcome === 'not_found') {
+      cleanNoPhoto = true;
+      continue;
+    }
     if (result?.outcome === 'error') {
       errors.push(result.error || `${target.network}: Provider-Tab-Abruf fehlgeschlagen`);
       continue;
@@ -125,18 +154,23 @@ async function esosFetchViaProviderTab(target) {
     errors.push(imageErrors.slice(0, 3).join(' | ') || `${target.network}: kein nutzbares Profilbild`);
   }
 
-  return { outcome: 'error', error: errors.filter(Boolean).slice(0, 4).join(' | ') || `${target.network}: Provider-Tab-Abruf fehlgeschlagen` };
+  if (cleanNoPhoto && errors.length === 0) return { outcome: 'not_found', network: target.network };
+  return {
+    outcome: 'error',
+    error: errors.filter(Boolean).slice(0, 4).join(' | ') || `${target.network}: Provider-Tab-Abruf fehlgeschlagen`,
+  };
 }
 
 socialPhotoFetchOne = async function(rawTarget) {
   const target = socialPhotoValidateTarget(rawTarget);
   if (!target) return { outcome: 'error', error: 'Ungültiger Social-Profillink.' };
 
-  // 1) Preferred path: already-open provider tab, so the request is same-origin.
+  // 1) Preferred path: an already-open provider tab. Exact open profiles are read
+  // from the fully rendered DOM; other profiles are requested from the same origin.
   const providerTab = await esosFetchViaProviderTab(target);
   if (providerTab.outcome === 'found' || providerTab.outcome === 'not_found') return providerTab;
 
-  // 2) Existing extension-origin fetch remains as technical backup.
+  // 2) Existing extension-origin fetch remains a technical backup.
   const legacyDirect = await esosOriginalSocialPhotoFetchOne(target);
   if (legacyDirect.outcome === 'found' || legacyDirect.outcome === 'not_found') return legacyDirect;
 
@@ -149,4 +183,23 @@ socialPhotoFetchOne = async function(rawTarget) {
   };
 };
 
-console.log('[ESOS AI] SocialPhoto direct route active: provider tab -> extension fetch -> server fallback.');
+// Existing LinkedIn/XING tabs do not automatically receive newly-added content
+// scripts after an extension update. Inject the DOM detector into them once so
+// manual profile import can see the avatar immediately after reloading ESOS AI.
+async function esosBootstrapRenderedPhotoDetector() {
+  try {
+    const tabs = await chrome.tabs.query({ url: [
+      ...esosProviderPatterns('linkedin'),
+      ...esosProviderPatterns('xing'),
+    ] });
+    for (const tab of tabs) {
+      if (!tab.id) continue;
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['profile-photo-dom-fix.js'] });
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+setTimeout(esosBootstrapRenderedPhotoDetector, 200);
+
+console.log('[ESOS AI] SocialPhoto direct route active: rendered DOM -> provider fetch -> extension fetch -> server fallback.');
