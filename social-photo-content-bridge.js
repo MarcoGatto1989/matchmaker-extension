@@ -1,8 +1,12 @@
 // Same-provider bridge for social profile photos.
-// Runs inside an already-open LinkedIn/XING tab and only returns candidate image URLs.
-// No credentials, cookies or tokens are read or transferred by this script.
+// Runs inside an already-open LinkedIn/XING tab and returns candidate image URLs.
+// It first reuses the rendered authenticated DOM, then tries a same-origin profile
+// request with the browser session, and finally retries without cookies before the
+// server-side fallback is ever needed.
 (() => {
-  const normalize = (raw) => String(raw || '')
+  'use strict';
+
+  const normalize = raw => String(raw || '')
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
@@ -11,11 +15,20 @@
     .replace(/\\\//g, '/')
     .replace(/[),;]+$/, '');
 
-  const providerForHost = (host) => {
+  const providerForHost = host => {
     const normalized = String(host || '').replace(/^www\./, '').toLowerCase();
     if (normalized === 'linkedin.com' || normalized.endsWith('.linkedin.com')) return 'linkedin';
     if (normalized === 'xing.com' || normalized.endsWith('.xing.com')) return 'xing';
     return null;
+  };
+
+  const canonicalProfileKey = raw => {
+    try {
+      const url = new URL(String(raw || ''));
+      return `${providerForHost(url.hostname) || ''}:${url.pathname.replace(/\/$/, '').toLowerCase()}`;
+    } catch (_) {
+      return '';
+    }
   };
 
   const isAllowedImage = (value, network) => {
@@ -23,7 +36,7 @@
       const parsed = new URL(value);
       if (parsed.protocol !== 'https:') return false;
       const lower = value.toLowerCase();
-      if (/ghost|default[-_]?avatar|favicon|logo|company[-_]?logo|background[-_]?image|banner/.test(lower)) return false;
+      if (/ghost|default[-_ ]?avatar|favicon|logo|company[-_ ]?logo|background[-_ ]?image|banner|sprite|icon/.test(lower)) return false;
       const host = parsed.hostname.toLowerCase();
       return network === 'linkedin'
         ? (host.endsWith('licdn.com') || host.endsWith('linkedin.com'))
@@ -31,6 +44,100 @@
     } catch (_) {
       return false;
     }
+  };
+
+  const pushCandidate = (list, value) => {
+    const normalized = normalize(value);
+    if (normalized) list.push(normalized);
+  };
+
+  const collectFromDom = (root, network) => {
+    const candidates = [];
+    if (!root?.querySelectorAll) return candidates;
+
+    for (const node of root.querySelectorAll('[data-esos-profile-photo="true"], img')) {
+      if (!(node instanceof HTMLImageElement)) continue;
+      pushCandidate(candidates, node.getAttribute('data-esos-profile-photo-src'));
+      pushCandidate(candidates, node.currentSrc);
+      pushCandidate(candidates, node.src);
+      const srcset = String(node.getAttribute('srcset') || '').split(',');
+      for (const part of srcset) pushCandidate(candidates, part.trim().split(/\s+/)[0]);
+    }
+
+    for (const node of root.querySelectorAll('meta[property="og:image"],meta[name="og:image"],meta[name="twitter:image"],meta[name="twitter:image:src"]')) {
+      pushCandidate(candidates, node.getAttribute('content'));
+    }
+
+    const seen = new Set();
+    return candidates.filter(value => {
+      if (!isAllowedImage(value, network) || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    }).slice(0, 16);
+  };
+
+  const collectFromHtml = (html, network) => {
+    const candidates = [];
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      for (const value of collectFromDom(doc, network)) pushCandidate(candidates, value);
+      for (const node of doc.querySelectorAll('img')) {
+        pushCandidate(candidates, node.getAttribute('src'));
+        pushCandidate(candidates, node.getAttribute('data-src'));
+        const srcset = String(node.getAttribute('srcset') || node.getAttribute('data-srcset') || '').split(',');
+        for (const part of srcset) pushCandidate(candidates, part.trim().split(/\s+/)[0]);
+      }
+    } catch (_) {}
+
+    const directPattern = /https?:\\?\/\\?\/[^"'\s<>]+/ig;
+    let match;
+    while ((match = directPattern.exec(html)) && candidates.length < 180) pushCandidate(candidates, match[0]);
+
+    const seen = new Set();
+    const imageUrls = [];
+    for (const raw of candidates) {
+      const value = normalize(raw);
+      if (!value || seen.has(value) || !isAllowedImage(value, network)) continue;
+      seen.add(value);
+      imageUrls.push(value);
+      if (imageUrls.length >= 16) break;
+    }
+    return imageUrls;
+  };
+
+  const fetchProfileCandidates = async (url, network, credentials) => {
+    const response = await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      redirect: 'follow',
+      credentials,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'de-DE,de;q=0.9,en;q=0.7'
+      }
+    });
+
+    if (!response.ok) {
+      return { outcome: 'error', error: `${network}: Provider-Tab Profil HTTP ${response.status} (${credentials})` };
+    }
+
+    const finalUrl = new URL(response.url);
+    const finalNetwork = providerForHost(finalUrl.hostname);
+    if (finalNetwork !== network || /login|signin|auth/i.test(finalUrl.pathname)) {
+      return { outcome: 'error', error: `${network}: Provider-Tab auf Login/andere Seite umgeleitet (${credentials})` };
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      return { outcome: 'error', error: `${network}: Provider-Tab lieferte kein HTML (${contentType})` };
+    }
+
+    const html = (await response.text()).slice(0, 2_500_000);
+    if (!html) return { outcome: 'error', error: `${network}: Provider-Tab Profilseite leer (${credentials})` };
+    const imageUrls = collectFromHtml(html, network);
+    return imageUrls.length
+      ? { outcome: 'found_candidates', imageUrls }
+      : { outcome: 'not_found' };
   };
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -48,71 +155,61 @@
         return;
       }
 
-      // Force the already-open provider origin. This avoids extension-origin/CORS behavior
-      // while keeping the exact public profile path intact.
+      // Best path: if this exact profile is already open, read the fully rendered
+      // authenticated DOM. Modern XING/LinkedIn often hydrate the avatar only after
+      // page load, so a raw HTML request alone can miss it.
+      if (canonicalProfileKey(requested.toString()) === canonicalProfileKey(location.href)) {
+        const rendered = collectFromDom(document, currentNetwork);
+        if (rendered.length) {
+          sendResponse({ outcome: 'found_candidates', imageUrls: rendered, source: 'rendered_dom' });
+          return;
+        }
+      }
+
+      // Force the already-open provider origin while keeping the requested profile path.
       requested.protocol = location.protocol;
       requested.host = location.host;
       requested.hash = '';
 
+      const errors = [];
+      let hadCleanNoPhoto = false;
+
+      // First try the logged-in browser session.
       try {
-        const response = await fetch(requested.toString(), {
-          method: 'GET',
-          cache: 'no-store',
-          redirect: 'follow',
-          headers: { Accept: 'text/html,application/xhtml+xml' },
-        });
-        if (!response.ok) {
-          sendResponse({ outcome: 'error', error: `${currentNetwork}: Provider-Tab Profil HTTP ${response.status}` });
+        const authenticated = await fetchProfileCandidates(requested.toString(), currentNetwork, 'include');
+        if (authenticated.outcome === 'found_candidates') {
+          sendResponse(authenticated);
           return;
         }
-
-        const finalNetwork = providerForHost(new URL(response.url).hostname);
-        if (finalNetwork !== currentNetwork || /login|signin|auth/i.test(new URL(response.url).pathname)) {
-          sendResponse({ outcome: 'error', error: `${currentNetwork}: Provider-Tab auf Login/andere Seite umgeleitet` });
-          return;
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
-          sendResponse({ outcome: 'error', error: `${currentNetwork}: Provider-Tab lieferte kein HTML (${contentType})` });
-          return;
-        }
-
-        const html = (await response.text()).slice(0, 2_500_000);
-        if (!html) {
-          sendResponse({ outcome: 'error', error: `${currentNetwork}: Provider-Tab Profilseite leer` });
-          return;
-        }
-
-        const candidates = [];
-        try {
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          for (const node of doc.querySelectorAll('meta[property="og:image"],meta[name="og:image"],meta[name="twitter:image"],meta[name="twitter:image:src"]')) {
-            const value = node.getAttribute('content');
-            if (value) candidates.push(value);
-          }
-        } catch (_) {}
-
-        const directPattern = /https?:\\?\/\\?\/[^"'\s<>]+/ig;
-        let match;
-        while ((match = directPattern.exec(html)) && candidates.length < 120) candidates.push(match[0]);
-
-        const imageUrls = [];
-        const seen = new Set();
-        for (const raw of candidates) {
-          const value = normalize(raw);
-          if (!value || seen.has(value) || !isAllowedImage(value, currentNetwork)) continue;
-          seen.add(value);
-          imageUrls.push(value);
-          if (imageUrls.length >= 12) break;
-        }
-
-        sendResponse(imageUrls.length
-          ? { outcome: 'found_candidates', imageUrls }
-          : { outcome: 'not_found' });
+        if (authenticated.outcome === 'not_found') hadCleanNoPhoto = true;
+        else if (authenticated.error) errors.push(authenticated.error);
       } catch (error) {
-        sendResponse({ outcome: 'error', error: `${currentNetwork}: Provider-Tab ${error?.message || 'Abruf fehlgeschlagen'}` });
+        errors.push(`${currentNetwork}: Provider-Tab ${error?.message || 'Abruf fehlgeschlagen'} (include)`);
       }
+
+      // XING in particular can serve a SPA/404 to authenticated fetches while the
+      // public SSR page contains the avatar. Retry from the same browser/provider
+      // tab without cookies before falling back to the ESOS server.
+      try {
+        const sessionless = await fetchProfileCandidates(requested.toString(), currentNetwork, 'omit');
+        if (sessionless.outcome === 'found_candidates') {
+          sendResponse({ ...sessionless, source: 'provider_tab_public_retry' });
+          return;
+        }
+        if (sessionless.outcome === 'not_found') hadCleanNoPhoto = true;
+        else if (sessionless.error) errors.push(sessionless.error);
+      } catch (error) {
+        errors.push(`${currentNetwork}: Provider-Tab ${error?.message || 'Abruf fehlgeschlagen'} (omit)`);
+      }
+
+      if (hadCleanNoPhoto && errors.length === 0) {
+        sendResponse({ outcome: 'not_found' });
+        return;
+      }
+      sendResponse({
+        outcome: 'error',
+        error: errors.filter(Boolean).slice(0, 4).join(' | ') || `${currentNetwork}: Provider-Tab-Abruf fehlgeschlagen`
+      });
     })();
 
     return true;
