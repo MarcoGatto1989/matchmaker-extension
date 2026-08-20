@@ -1,4 +1,4 @@
-// background.js — MatchMaker BOOT Extension v3.6 Service Worker
+// background.js — ESOS AI Extension v3.6 Service Worker
 // Connects to ESOS Full-Stack backend (outreach-ext endpoints)
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
@@ -55,7 +55,7 @@ async function fetchConfig(apiBase, token) {
       lastConfigFetch = Date.now();
     }
   } catch (e) {
-    console.warn('[BOOT] Config fetch failed:', e.message);
+    console.warn('[ESOS AI] Config fetch failed:', e.message);
   }
 }
 
@@ -133,7 +133,7 @@ async function processNextJob() {
       return;
     }
   } catch (e) {
-    console.warn('[BOOT] Sofortabruf fehlgeschlagen:', e.message);
+    console.warn('[ESOS AI] Sofortabruf fehlgeschlagen:', e.message);
   } finally {
     isProcessing = false;
   }
@@ -141,19 +141,19 @@ async function processNextJob() {
   // Check daily limit
   const dailyLimit = config?.daily_limit || 25;
   if (dailyCount >= dailyLimit) {
-    console.log(`[BOOT] Daily limit reached (${dailyCount}/${dailyLimit})`);
+    console.log(`[ESOS AI] Daily limit reached (${dailyCount}/${dailyLimit})`);
     return;
   }
 
   // Check active hours
   if (!isWithinActiveHours()) {
-    console.log('[BOOT] Outside active hours — skipping');
+    console.log('[ESOS AI] Outside active hours — skipping');
     return;
   }
 
   // Check weekday
   if (config?.weekdays_only && !isWeekday()) {
-    console.log('[BOOT] Weekend — skipping');
+    console.log('[ESOS AI] Weekend — skipping');
     return;
   }
 
@@ -165,12 +165,12 @@ async function processNextJob() {
     const jobs = await r.json();
 
     if (!jobs || jobs.length === 0) {
-      console.log('[BOOT] No queued jobs');
+      console.log('[ESOS AI] No queued jobs');
       return;
     }
 
     const job = jobs[0];
-    console.log(`[BOOT] Processing: ${job.candidate_name} — ${job.linkedin_url}`);
+    console.log(`[ESOS AI] Processing: ${job.candidate_name} — ${job.linkedin_url}`);
 
     // ── KandiScout search job: open search URL, scrape result list ──
     if (job.job_type === 'scout_search' && job.payload) {
@@ -223,7 +223,7 @@ async function processNextJob() {
     dailyCount++;
 
   } catch (e) {
-    console.error('[BOOT] Error:', e.message);
+    console.error('[ESOS AI] Error:', e.message);
   } finally {
     isProcessing = false;
   }

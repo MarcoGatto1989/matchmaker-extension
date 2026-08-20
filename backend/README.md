@@ -1,6 +1,6 @@
-# MatchMaker BOOT Outreach — Backend API
+# ESOS AI Outreach — Backend API
 
-Backend für die MatchMaker BOOT Outreach Chrome Extension. Verwaltet die Job-Queue für LinkedIn-Kontaktanfragen.
+Backend für die ESOS AI Outreach Chrome Extension. Verwaltet die Job-Queue für LinkedIn-Kontaktanfragen.
 
 ## Endpunkte
 

@@ -1,5 +1,5 @@
 """
-MatchMaker BOOT Outreach — Backend API v2
+ESOS AI Outreach — Backend API v2
 Connects to Base44 as the data layer (no local database).
 """
 import os
@@ -75,7 +75,7 @@ async def base44_delete(path: str) -> dict:
 # ── FastAPI App ─────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="MatchMaker BOOT Outreach API",
+    title="ESOS AI Outreach API",
     version="2.0.0",
 )
 

@@ -1,4 +1,4 @@
-// MatchMaker BOOT position + social-photo worker
+// ESOS AI position + social-photo worker
 // Uses the authenticated LinkedIn/XING browser session without opening visible tabs.
 importScripts('background.js', 'position-profile-parser.js');
 
@@ -253,7 +253,7 @@ async function runSocialProfilePhotoJob(job, apiBase, token) {
         body: JSON.stringify({
           jobId: job.id,
           outcome: 'found',
-          source: `${result.network}_boot_extension`,
+          source: `${result.network}_esos_ai_extension`,
           sourceUrl: result.sourceUrl,
           mimeType: result.mimeType,
           imageBase64: result.imageBase64,
@@ -267,7 +267,7 @@ async function runSocialProfilePhotoJob(job, apiBase, token) {
       return;
     }
     if (result.outcome === 'not_found') cleanNoPhotoCount += 1;
-    else errors.push(result.error || 'Unbekannter BOOT-Fehler');
+    else errors.push(result.error || 'Unbekannter ESOS-AI-Fehler');
   }
 
   const outcome = errors.length ? 'error' : 'not_found';
