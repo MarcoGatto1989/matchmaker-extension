@@ -2,7 +2,7 @@
 
 LinkedIn-/XING-Profilimport, Positionsabgleich, Netzwerk-Projekte, Outreach und Social Publishing über die normale Anmeldesitzung des jeweiligen Anbieters.
 
-Version 3.7.0 kann zusätzlich Kandidaten mit bereits bestätigtem Profil-Link aus dem ESOS Social Finder automatisch in vorhandene **LinkedIn-Recruiter-Projekte** bzw. **XING-TalentManager-Projekte** einsortieren. Projektname und optional die konkrete Projekt-URL werden von ESOS übergeben, damit das richtige Ziel eindeutig ausgewählt werden kann. Der bestehende Positionsabgleich liest vorhandene Profil-Links weiterhin per Hintergrundanfrage mit der Browser-Sitzung aus und öffnet dabei keine Tabs. Zugangsdaten werden nicht an ESOS übertragen und nicht von der Erweiterung gespeichert.
+Die Extension kann Kandidaten mit bereits bestätigtem Profil-Link aus dem ESOS Social Finder automatisch in vorhandene **LinkedIn-Recruiter-Projekte** bzw. **XING-TalentManager-Projekte** einsortieren. Projektname und optional die konkrete Projekt-URL werden von ESOS übergeben, damit das richtige Ziel eindeutig ausgewählt werden kann. Der Positionsabgleich liest ausschließlich die aktuelle Position aus dem gespeicherten Profil-Link: zuerst aus strukturierten Profildaten, dann aus öffentlichen Profil-Metadaten. Er öffnet dabei keine Tabs, führt keine Namens- oder Firmensuche durch und überträgt keine Zugangsdaten an ESOS.
 
 ## Installation (Chrome)
 

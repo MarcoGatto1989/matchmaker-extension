@@ -1,8 +1,11 @@
-// popup.js — MatchMaker BOOT Extension v3.8.0
+// popup.js — MatchMaker BOOT Extension
 // Manual CRM import: opening the extension on a LinkedIn/XING profile auto-reads
 // the active profile and pre-fills an ESOS-aligned editable form.
 // Background queues (network projects, position check, outreach, social publishing)
 // are intentionally untouched.
+
+const extensionVersion = document.getElementById('extension-version');
+if (extensionVersion) extensionVersion.textContent = `v${chrome.runtime.getManifest().version}`;
 
 async function safeFetch(url, opts = {}, timeoutMs = 8000) {
   const controller = new AbortController();

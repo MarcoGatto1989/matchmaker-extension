@@ -1,4 +1,4 @@
-// MatchMaker BOOT v3.6 position worker
+// MatchMaker BOOT position worker
 // Reads an existing LinkedIn/XING profile with the browser session in a
 // background request. It never creates or activates a browser tab.
 importScripts('background.js', 'position-profile-parser.js');
@@ -69,7 +69,12 @@ runPositionCheck = async function(job, apiBase, token) {
       await report(false, null, platform, 'Das Profil lieferte kein lesbares HTML.');
       return;
     }
-    const html = (await response.text()).slice(0, 2_000_000);
+    const responseText = await response.text();
+    if (!responseText || responseText.length < 80) {
+      await report(false, null, platform, 'Das Profil lieferte keine auswertbaren öffentlichen Positionsdaten.');
+      return;
+    }
+    const html = responseText.slice(0, 2_500_000);
     const parsed = MatchMakerPositionParser.parseProfileHtml(html, { platform, profileUrl: url.toString() });
     if (!parsed.success) {
       await report(false, null, platform, parsed.error || 'Position konnte nicht ausgelesen werden.');
@@ -77,7 +82,9 @@ runPositionCheck = async function(job, apiBase, token) {
     }
 
     await report(true, parsed.data, platform, null);
-    console.log(`[Positionsabgleich] ${job.candidate_name} im Hintergrund geprüft (${platform}).`);
+    console.log(
+      `[Positionsabgleich] Position im Hintergrund geprüft (${platform}, ${parsed.data.positionSource}, ${Math.round(parsed.data.positionConfidence * 100)}%).`,
+    );
   } catch (error) {
     console.error('[Positionsabgleich] Fehler:', error.message);
     try {
