@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ESOS AI",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "description": "ESOS AI Browser Extension für LinkedIn/XING Profil-Import, Socialmedia-Profilbilder, Netzwerk-Projekte, positionsgenauen Hintergrundabgleich, Outreach und Social Publishing.",
   "permissions": [
     "storage",
@@ -32,7 +32,7 @@
     }
   },
   "background": {
-    "service_worker": "background-worker.js"
+    "service_worker": "service-worker.js"
   },
   "content_scripts": [
     {
@@ -42,6 +42,7 @@
         "https://*.linkedin.com/*"
       ],
       "js": [
+        "social-photo-content-bridge.js",
         "content.js"
       ]
     },
@@ -53,6 +54,7 @@
       ],
       "js": [
         "xing-search-location.js",
+        "social-photo-content-bridge.js",
         "content.js"
       ]
     }
