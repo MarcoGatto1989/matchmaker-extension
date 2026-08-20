@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - release/esos-ai-4.0.1-package
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
