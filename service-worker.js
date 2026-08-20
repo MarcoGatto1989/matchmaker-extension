@@ -183,4 +183,23 @@ socialPhotoFetchOne = async function(rawTarget) {
   };
 };
 
+// Existing LinkedIn/XING tabs do not automatically receive newly-added content
+// scripts after an extension update. Inject the DOM detector into them once so
+// manual profile import can see the avatar immediately after reloading ESOS AI.
+async function esosBootstrapRenderedPhotoDetector() {
+  try {
+    const tabs = await chrome.tabs.query({ url: [
+      ...esosProviderPatterns('linkedin'),
+      ...esosProviderPatterns('xing'),
+    ] });
+    for (const tab of tabs) {
+      if (!tab.id) continue;
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['profile-photo-dom-fix.js'] });
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+setTimeout(esosBootstrapRenderedPhotoDetector, 200);
+
 console.log('[ESOS AI] SocialPhoto direct route active: rendered DOM -> provider fetch -> extension fetch -> server fallback.');
