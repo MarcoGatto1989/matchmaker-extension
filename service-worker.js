@@ -57,6 +57,20 @@ async function esosReadImageCandidate(imageUrl, network) {
   };
 }
 
+async function esosSendProviderMessage(tabId, message) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (_) {
+    // After an extension update, already-open provider tabs may still lack the new bridge.
+    // Inject it on demand, then retry once without requiring a visible tab reload.
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['social-photo-content-bridge.js'],
+    });
+    return await chrome.tabs.sendMessage(tabId, message);
+  }
+}
+
 async function esosFetchViaProviderTab(target) {
   let tabs = [];
   try {
@@ -83,7 +97,7 @@ async function esosFetchViaProviderTab(target) {
     if (!tab.id) continue;
     let result;
     try {
-      result = await chrome.tabs.sendMessage(tab.id, {
+      result = await esosSendProviderMessage(tab.id, {
         type: 'ESOS_SOCIAL_PHOTO_PROFILE_CANDIDATES',
         network: target.network,
         profileUrl: target.url,
