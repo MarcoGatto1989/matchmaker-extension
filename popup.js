@@ -1,4 +1,4 @@
-// popup.js — MatchMaker BOOT Extension
+// popup.js — ESOS AI Extension
 // Manual CRM import: opening the extension on a LinkedIn/XING profile auto-reads
 // the active profile and pre-fills an ESOS-aligned editable form.
 // Background queues (network projects, position check, outreach, social publishing)
@@ -398,15 +398,15 @@ async function checkConnections() {
     chrome.runtime.sendMessage({ type: 'GET_STATUS' }, result => {
       if (chrome.runtime.lastError || !result?.connected) {
         bootBadge.className = 'conn-badge fail';
-        bootBadgeText.textContent = 'BOOT API ✗';
+        bootBadgeText.textContent = 'ESOS AI API ✗';
         return;
       }
       bootBadge.className = 'conn-badge ok';
-      bootBadgeText.textContent = 'BOOT API ✓';
+      bootBadgeText.textContent = 'ESOS AI API ✓';
     });
   } catch (_) {
     bootBadge.className = 'conn-badge fail';
-    bootBadgeText.textContent = 'BOOT API ✗';
+    bootBadgeText.textContent = 'ESOS AI API ✗';
   }
 }
 
@@ -525,7 +525,7 @@ function readEditableProfile() {
     linkedInUrl: getValue('candidate-linkedin') || undefined,
     xingUrl: getValue('candidate-xing') || undefined,
     notes: getValue('candidate-notes') || undefined,
-    sourceChannel: scrapedData?.sourceChannel || (activeProfilePlatform === 'linkedin' ? 'LinkedIn' : activeProfilePlatform === 'xing' ? 'Xing' : 'BOOT Extension')
+    sourceChannel: scrapedData?.sourceChannel || (activeProfilePlatform === 'linkedin' ? 'LinkedIn' : activeProfilePlatform === 'xing' ? 'Xing' : 'ESOS AI Extension')
   };
 }
 

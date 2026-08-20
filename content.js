@@ -1,4 +1,4 @@
-// content.js — MatchMaker BOOT Extension v3.6
+// content.js — ESOS AI Extension v3.6
 // Runs on LinkedIn & XING pages
 // Supports profile scraping, platform-project assignment, outreach and social publishing.
 
@@ -606,7 +606,7 @@
       await reportCompletion(api_base, job_id, token, 'completed', null);
       return { success: true };
     } catch (err) {
-      console.error('[BOOT] Fehler:', err.message);
+      console.error('[ESOS AI] Fehler:', err.message);
       await reportCompletion(api_base, job_id, token, 'failed', err.message);
       return { success: false, error: err.message };
     }
@@ -619,7 +619,7 @@
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({ status, error }),
       });
-    } catch (e) { console.error('[BOOT] Reporting failed:', e.message); }
+    } catch (e) { console.error('[ESOS AI] Reporting failed:', e.message); }
   }
 
   // ═══════════════════════════════════════════════════════════════════════

@@ -1,4 +1,4 @@
-// manual-import-fixes.js — MatchMaker BOOT v3.8.3
+// manual-import-fixes.js — ESOS AI v3.8.3
 // Verbesserungen nur für den manuellen LinkedIn/XING-Import.
 // Background-Worker, Netzwerk-Projekte, Positionscheck und Outreach bleiben unverändert.
 
