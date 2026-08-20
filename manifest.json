@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "MatchMaker BOOT",
-  "version": "3.9.1",
-  "description": "LinkedIn/XING Profil-Import, Socialmedia-Profilbilder, Netzwerk-Projekte, positionsgenauer tabloser Abgleich, Outreach und Social Publishing über die angemeldete Browser-Sitzung.",
+  "name": "ESOS AI",
+  "version": "4.0.0",
+  "description": "ESOS AI Browser Extension für LinkedIn/XING Profil-Import, Socialmedia-Profilbilder, Netzwerk-Projekte, positionsgenauen Hintergrundabgleich, Outreach und Social Publishing.",
   "permissions": [
     "storage",
     "activeTab",
