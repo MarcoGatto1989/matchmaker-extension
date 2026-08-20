@@ -30,8 +30,20 @@ function getSettings() {
   });
 }
 
+const DEFAULT_ESOS_URL = 'https://esos-web-production.up.railway.app';
+
 function getEsosUrl(settings) {
-  return (settings?.esos_url || 'https://executive-sphere-production.up.railway.app').replace(/\/$/, '');
+  const configured = String(settings?.esos_url || '').trim().replace(/\/$/, '');
+  if (!configured) return DEFAULT_ESOS_URL;
+  try {
+    const parsed = new URL(configured);
+    const defaultHost = new URL(DEFAULT_ESOS_URL).hostname;
+    if (parsed.hostname.endsWith('.up.railway.app') && parsed.hostname !== defaultHost) {
+      chrome.storage.local.set({ esos_url: DEFAULT_ESOS_URL });
+      return DEFAULT_ESOS_URL;
+    }
+  } catch (_) {}
+  return configured;
 }
 
 function setText(id, text) {
@@ -311,7 +323,7 @@ const settingsStatus = document.getElementById('settings-status');
 
 (async () => {
   const settings = await getSettings();
-  esosUrlInput.value = settings.esos_url || 'https://executive-sphere-production.up.railway.app';
+  esosUrlInput.value = getEsosUrl(settings);
   esosEmailInput.value = settings.esos_email || '';
   esosPasswordInput.value = settings.esos_password || '';
   bootTokenInput.value = settings.extension_token || '';

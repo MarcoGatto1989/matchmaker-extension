@@ -3,7 +3,7 @@
 // Improvements: fetch timeouts, graceful error recovery, better alarm handling
 
 // ── Default API base (can be overridden via settings) ──
-const DEFAULT_API_BASE = 'https://executive-sphere-production.up.railway.app';
+const DEFAULT_API_BASE = 'https://esos-web-production.up.railway.app';
 
 // ── State ──────────────────────────────────────────────────────────────
 let isProcessing = false;
@@ -19,10 +19,26 @@ function getToken() {
   });
 }
 
+function normalizeStoredEsosUrl(value) {
+  const raw = String(value || '').trim().replace(/\/$/, '');
+  if (!raw) return DEFAULT_API_BASE;
+  try {
+    const parsed = new URL(raw);
+    const defaultHost = new URL(DEFAULT_API_BASE).hostname;
+    if (parsed.hostname.endsWith('.up.railway.app') && parsed.hostname !== defaultHost) {
+      return DEFAULT_API_BASE;
+    }
+  } catch (_) {}
+  return raw;
+}
+
 function getApiBase() {
   return new Promise(resolve => {
     chrome.storage.local.get('esos_url', res => {
-      const url = (res.esos_url || DEFAULT_API_BASE).replace(/\/$/, '');
+      const url = normalizeStoredEsosUrl(res.esos_url);
+      if (res.esos_url && url !== String(res.esos_url).replace(/\/$/, '')) {
+        chrome.storage.local.set({ esos_url: url });
+      }
       resolve(url);
     });
   });
