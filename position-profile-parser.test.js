@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const parser = require('./position-profile-parser-v2.js');
+const parser = require('./position-profile-parser.js');
 
 const linkedInTitle = parser.parseProfileHtml(
   '<meta property="og:title" content="Max Mustermann – Geschäftsführer bei Muster GmbH | LinkedIn">',
@@ -8,6 +8,20 @@ const linkedInTitle = parser.parseProfileHtml(
 assert.equal(linkedInTitle.success, true);
 assert.equal(linkedInTitle.data.currentPosition, 'Geschäftsführer');
 assert.equal(linkedInTitle.data.positionSource, 'meta-title');
+
+const linkedInCompanyOnlyTitle = parser.parseProfileHtml(
+  '<meta property="og:title" content="Ferdinand Plehn – RSM Ebner Stolz | LinkedIn">',
+  { platform: 'linkedin' },
+);
+assert.equal(linkedInCompanyOnlyTitle.success, false);
+
+const linkedInCompanyOccupationWithHeadline = parser.parseProfileHtml(
+  '<meta property="og:title" content="Ferdinand Plehn – RSM Ebner Stolz | LinkedIn"><script>{"occupation":"RSM Ebner Stolz","companyName":"RSM Ebner Stolz","headline":"Wirtschaftsprüfer und Steuerberater"}</script>',
+  { platform: 'linkedin' },
+);
+assert.equal(linkedInCompanyOccupationWithHeadline.success, true);
+assert.equal(linkedInCompanyOccupationWithHeadline.data.currentPosition, 'Wirtschaftsprüfer und Steuerberater');
+assert.equal(linkedInCompanyOccupationWithHeadline.data.positionSource, 'embedded-headline');
 
 const xingOccupation = parser.parseProfileHtml(
   '<title>Britta Beispiel | XING</title><script>{"occupation":"Partnerin bei Beispiel GmbH"}</script>',
@@ -68,5 +82,6 @@ assert.deepEqual(
 );
 assert.equal(Object.prototype.hasOwnProperty.call(linkedInTitle.data, 'currentCompany'), false);
 assert.equal(Object.prototype.hasOwnProperty.call(linkedInTitle.data, 'displayName'), false);
+assert.equal(parser.PARSER_VERSION, 3);
 
-console.log('position-profile-parser-v2: ok');
+console.log('position-profile-parser-v3: ok');
