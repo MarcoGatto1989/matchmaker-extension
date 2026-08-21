@@ -5,10 +5,13 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const PARSER_VERSION = 2;
+  const PARSER_VERSION = 3;
   const MIN_CONFIDENCE = 0.8;
   const ROLE_CONTEXT = /(?:^|[.\[])(?:position|positions|experience|experiences|employment|occupation|career|job|jobs)(?:$|[.\[\]])/i;
+  const COMPANY_CONTEXT = /(?:^|[.\[])(?:company|companies|organization|organizations|worksfor|employer|employers)(?:$|[.\[\]])/i;
   const BLOCKED_TEXT = /(?:sign in|log in|login|anmelden|authwall|captcha|checkpoint|security verification)/i;
+  const ROLE_SIGNAL = /\b(?:geschäftsführ\w*|geschäftsleit\w*|managing\s+director|director|partner(?:in)?|prokurist(?:in)?|vorstand|ceo|cfo|cto|coo|chief\b|head\s+of|leiter(?:in)?|leitung|manager(?:in)?|consultant|berater(?:in)?|wirtschaftsprüf\w*|steuerberat\w*|rechtsanw\w*|anwalt|anwältin|auditor|accountant|controller|buchhalter(?:in)?|sachbearbeit\w*|referent(?:in)?|specialist|expert(?:in)?|associate|principal|analyst|engineer|developer|entwickler(?:in)?|architect|architekt(?:in)?|recruiter|talent\b|human\s+resources|hr\b|sales\b|vertrieb|marketing|founder|gründer(?:in)?|inhaber(?:in)?|owner|freelanc\w*|selbstständig|student(?:in)?|professor(?:in)?|wissenschaft\w*|tax\b|audit\b|legal\b|finance\b|financial\b|operations\b|projektleiter(?:in)?|project\s+manager|produktleiter(?:in)?|product\s+manager|bereichsleit\w*|teamleit\w*|abteilungsleit\w*|kanzleileit\w*)\b/i;
+  const COMPANY_SIGNAL = /\b(?:gmbh|ag|kg|mbb|mbh|llp|ltd|inc|corp|corporation|se|plc|partnerschaft|kanzlei|wirtschaftsprüfungsgesellschaft|steuerberatungsgesellschaft|rechtsanwaltsgesellschaft)\b/i;
 
   function decode(value) {
     return String(value || '')
@@ -76,6 +79,42 @@
     return position.slice(0, 220);
   }
 
+  function companyKey(value) {
+    return cleanSiteSuffix(value)
+      .toLocaleLowerCase('de-DE')
+      .replace(/\b(?:gmbh|ag|kg|mbb|mbh|llp|ltd|inc|corp|corporation|se|plc|partnerschaft(?:\s+mbb)?|wirtschaftsprüfungsgesellschaft|steuerberatungsgesellschaft|rechtsanwaltsgesellschaft)\b/gi, ' ')
+      .replace(/[^a-z0-9äöüß]+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function addCompany(companies, value) {
+    const company = cleanSiteSuffix(value);
+    const key = companyKey(company);
+    if (!company || key.length < 3) return;
+    if (!companies.some(item => item.key === key)) companies.push({ key, company });
+  }
+
+  function sameCompany(position, company) {
+    const left = companyKey(position);
+    const right = companyKey(company);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const shorter = left.length <= right.length ? left : right;
+    const longer = left.length > right.length ? left : right;
+    return shorter.length >= 8 && shorter.split(/\s+/).length >= 2 && longer.includes(shorter);
+  }
+
+  function roleLikeConfidence(value, trustedConfidence, platform, weakConfidence = 0.76) {
+    if (platform !== 'linkedin') return trustedConfidence;
+    const raw = stripTags(value);
+    const normalized = normalizePosition(raw);
+    if (!normalized) return 0;
+    if (/\s(?:bei|at|@)\s/i.test(raw) || ROLE_SIGNAL.test(normalized)) return trustedConfidence;
+    if (COMPANY_SIGNAL.test(normalized)) return Math.min(weakConfidence, 0.58);
+    return Math.min(trustedConfidence, weakConfidence);
+  }
+
   function addCandidate(candidates, value, confidence, source) {
     const position = normalizePosition(value);
     if (!position) return;
@@ -126,14 +165,14 @@
     return '';
   }
 
-  function walkStructured(value, path, candidates, depth, seen) {
+  function walkStructured(value, path, candidates, companies, platform, depth, seen) {
     if (depth > 16 || value == null) return;
     if (typeof value !== 'object') return;
     if (seen.has(value)) return;
     seen.add(value);
 
     if (Array.isArray(value)) {
-      value.slice(0, 100).forEach((item, index) => walkStructured(item, `${path}[${index}]`, candidates, depth + 1, seen));
+      value.slice(0, 100).forEach((item, index) => walkStructured(item, `${path}[${index}]`, candidates, companies, platform, depth + 1, seen));
       return;
     }
 
@@ -142,24 +181,32 @@
       const key = rawKey.toLowerCase().replace(/[^a-z]/g, '');
       const childPath = path ? `${path}.${rawKey}` : rawKey;
       if (typeof child === 'string') {
+        if (key === 'companyname' || key === 'employername' || key === 'organizationname' || (key === 'name' && COMPANY_CONTEXT.test(path))) {
+          addCompany(companies, child);
+        }
+
         if (key === 'currentposition') addCandidate(candidates, child, roleConfidence(0.99, value, path), 'structured-current-position');
         else if (key === 'jobtitle' || key === 'positionname' || key === 'rolename') {
           addCandidate(candidates, child, roleConfidence(0.97, value, path), `structured-${key}`);
         } else if (key === 'occupation') {
-          addCandidate(candidates, child, roleConfidence(0.96, value, path), 'structured-occupation');
+          const confidence = roleLikeConfidence(child, roleConfidence(0.96, value, path), platform, 0.74);
+          addCandidate(candidates, child, confidence, 'structured-occupation');
         } else if (key === 'headline' || key === 'professionalheadline') {
-          addCandidate(candidates, child, state === 'ended' ? 0.65 : 0.84, 'structured-headline');
+          const base = state === 'ended' ? 0.65 : 0.86;
+          addCandidate(candidates, child, roleLikeConfidence(child, base, platform, 0.79), 'structured-headline');
         } else if ((key === 'title' || key === 'name') && state === 'current' && ROLE_CONTEXT.test(path)) {
           addCandidate(candidates, child, 0.98, 'structured-current-role');
         }
       } else if (key === 'occupation' && child && typeof child === 'object') {
-        addCandidate(candidates, occupationValue(child), roleConfidence(0.96, value, path), 'structured-occupation-object');
+        const occupation = occupationValue(child);
+        const confidence = roleLikeConfidence(occupation, roleConfidence(0.96, value, path), platform, 0.74);
+        addCandidate(candidates, occupation, confidence, 'structured-occupation-object');
       }
-      walkStructured(child, childPath, candidates, depth + 1, seen);
+      walkStructured(child, childPath, candidates, companies, platform, depth + 1, seen);
     }
   }
 
-  function parseStructuredScripts(html, candidates) {
+  function parseStructuredScripts(html, candidates, companies, platform) {
     const scripts = String(html || '').match(/<script\b[^>]*>[\s\S]*?<\/script>/gi) || [];
     for (const script of scripts.slice(0, 250)) {
       const open = script.match(/^<script\b([^>]*)>/i)?.[1] || '';
@@ -176,7 +223,7 @@
       if (typeof parsed === 'string' && /^[{[]/.test(parsed.trim())) {
         try { parsed = JSON.parse(parsed); } catch { /* keep string */ }
       }
-      walkStructured(parsed, '', candidates, 0, new WeakSet());
+      walkStructured(parsed, '', candidates, companies, platform, 0, new WeakSet());
     }
   }
 
@@ -197,26 +244,43 @@
     return values;
   }
 
-  function parseEmbeddedStrings(html, candidates) {
+  function parseEmbeddedStrings(html, candidates, companies, platform) {
+    for (const key of ['companyName', 'employerName', 'organizationName']) {
+      for (const value of jsonStringValues(html, key)) addCompany(companies, value);
+    }
+
     const keys = [
-      ['currentPosition', 0.99, 'embedded-current-position'],
-      ['jobTitle', 0.93, 'embedded-job-title'],
-      ['positionName', 0.93, 'embedded-position-name'],
-      ['roleName', 0.93, 'embedded-role-name'],
-      ['occupation', 0.94, 'embedded-occupation'],
-      ['professionalHeadline', 0.85, 'embedded-professional-headline'],
-      ['headline', 0.83, 'embedded-headline'],
+      ['currentPosition', 0.99, 'embedded-current-position', 0.99],
+      ['jobTitle', 0.97, 'embedded-job-title', 0.97],
+      ['positionName', 0.97, 'embedded-position-name', 0.97],
+      ['roleName', 0.97, 'embedded-role-name', 0.97],
+      ['occupation', 0.94, 'embedded-occupation', 0.74],
+      ['professionalHeadline', 0.86, 'embedded-professional-headline', 0.79],
+      ['headline', 0.85, 'embedded-headline', 0.79],
     ];
-    for (const [key, confidence, source] of keys) {
-      for (const value of jsonStringValues(html, key)) addCandidate(candidates, value, confidence, source);
+    for (const [key, confidence, source, weakConfidence] of keys) {
+      for (const value of jsonStringValues(html, key)) {
+        const adjusted = ['occupation', 'professionalHeadline', 'headline'].includes(key)
+          ? roleLikeConfidence(value, confidence, platform, weakConfidence)
+          : confidence;
+        addCandidate(candidates, value, adjusted, source);
+      }
     }
   }
 
-  function titlePosition(value) {
+  function titlePosition(value, platform = 'linkedin') {
     const cleaned = cleanSiteSuffix(value);
     const parts = cleaned.split(/\s+(?:-|–|—|\|)\s+/).map(part => part.trim()).filter(Boolean);
     if (parts.length < 2) return '';
-    return normalizePosition(parts.slice(1).join(' · '));
+    const raw = parts.slice(1).join(' · ');
+    const normalized = normalizePosition(raw);
+    if (!normalized) return '';
+
+    // LinkedIn frequently formats the page title as "Name – Company | LinkedIn".
+    // That second segment is a company, not a job title. Only accept the title
+    // fallback when it carries a clear role signal or an explicit "role at company" form.
+    if (platform === 'linkedin' && !/\s(?:bei|at|@)\s/i.test(raw) && !ROLE_SIGNAL.test(normalized)) return '';
+    return normalized;
   }
 
   function descriptionPositions(value) {
@@ -229,6 +293,15 @@
     return positions;
   }
 
+  function demoteCompanyCandidates(candidates, companies) {
+    if (!companies.length) return;
+    for (const candidate of candidates) {
+      if (!companies.some(company => sameCompany(candidate.position, company.company))) continue;
+      candidate.confidence = Math.min(candidate.confidence, 0.55);
+      candidate.source = `${candidate.source}-company-match`;
+    }
+  }
+
   function parseProfileHtml(html, options = {}) {
     const platform = options.platform === 'xing' ? 'xing' : 'linkedin';
     const source = String(html || '');
@@ -239,10 +312,12 @@
     }
 
     const candidates = [];
-    parseStructuredScripts(source, candidates);
-    parseEmbeddedStrings(source, candidates);
-    addCandidate(candidates, titlePosition(title), 0.91, 'meta-title');
+    const companies = [];
+    parseStructuredScripts(source, candidates, companies, platform);
+    parseEmbeddedStrings(source, candidates, companies, platform);
+    addCandidate(candidates, titlePosition(title, platform), 0.91, 'meta-title');
     for (const value of descriptionPositions(description)) addCandidate(candidates, value, 0.82, 'meta-description');
+    demoteCompanyCandidates(candidates, companies);
 
     candidates.sort((left, right) => right.confidence - left.confidence);
     const best = candidates[0];
@@ -250,7 +325,7 @@
       return {
         success: false,
         error: 'Im Profil wurde keine eindeutige öffentliche aktuelle Position gefunden.',
-        diagnostics: { parserVersion: PARSER_VERSION, candidateCount: candidates.length },
+        diagnostics: { parserVersion: PARSER_VERSION, candidateCount: candidates.length, companyCount: companies.length },
       };
     }
 
@@ -263,7 +338,7 @@
         positionSource: best.source,
         parserVersion: PARSER_VERSION,
       },
-      diagnostics: { parserVersion: PARSER_VERSION, candidateCount: candidates.length },
+      diagnostics: { parserVersion: PARSER_VERSION, candidateCount: candidates.length, companyCount: companies.length },
     };
   }
 
