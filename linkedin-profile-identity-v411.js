@@ -140,8 +140,6 @@
     const h1 = firstVisible(['[data-anonymize="person-name"]', 'h1.text-heading-xlarge', 'main h1', '[role="main"] h1', 'h1']);
     if (!h1) return null;
 
-    // Current LinkedIn renders the identity card as its own section. Returning
-    // that smallest candidate-owned section prevents sidebar/ad contamination.
     const directSection = h1.closest('section');
     if (directSection) return directSection;
 
@@ -232,7 +230,6 @@
   }
 
   function findPosition(scope) {
-    // First trust only the candidate's own top-card headline.
     const headline = firstVisibleWithin(scope || document, [
       '[data-anonymize="headline"]',
       '.text-body-medium.break-words',
@@ -243,8 +240,6 @@
     const roleSignal = /\b(?:geschäftsführ\w*|managing director|director|partner|prokurist|vorstand|ceo|cfo|cto|coo|chief|head of|leiter\w*|manager\w*|consultant|berater\w*|wirtschaftsprüf\w*|steuerberat\w*|rechtsanw\w*|auditor|accountant|controller|specialist|expert|associate|principal|analyst|engineer|developer|architect|recruiter|sales|marketing|founder|gründer\w*|inhaber\w*|owner|professor\w*)\b/i;
     if (roleSignal.test(value) && value.split(/\s+/).length <= 20) return value;
 
-    // Structured page data can still provide the real position, but only accept
-    // a parser result when it is strong and not identical to the detected company.
     try {
       const parser = globalThis.MatchMakerPositionParser;
       if (parser?.parseProfileHtml) {
@@ -313,24 +308,28 @@
     const scope = topCardScope();
     const company = findCurrentCompany(scope);
     const position = findPosition(scope);
-    if (company) data.currentCompany = company;
-    if (position) data.currentPosition = position;
-
     const locationText = findLocation(scope);
-    if (locationText) {
-      data.locationFull = locationText;
-      data.companyCity = clean(locationText.split(',')[0]);
-    }
+    const directContact = readDirectContactData();
+    const exams = detectExams(profileExamText(scope));
+
+    // These fields are authoritative for LinkedIn. `false` is deliberate: the
+    // popup's legacy fallback merger treats it as a present value, while all form
+    // renderers turn it into an empty field. This prevents unrelated fallback
+    // data from reappearing when the strict parser correctly found nothing.
+    data.currentCompany = company || false;
+    data.currentPosition = position || false;
+    data.locationFull = locationText || false;
+    data.companyCity = locationText ? clean(locationText.split(',')[0]) : false;
+    data.email = directContact.email || false;
+    data.phone = directContact.phone || false;
+    data.phoneMobile = false;
+    data.berufsexamen = exams || false;
 
     const photo = findPhoto(scope);
     if (photo) data.profilePhoto = photo;
 
-    Object.assign(data, readDirectContactData());
-
     data.linkedInUrl = location.href.split('?')[0].replace(/\/$/, '');
     data.sourceChannel = 'LinkedIn';
-    const exams = detectExams(profileExamText(scope));
-    if (exams) data.berufsexamen = exams;
 
     return {
       success: Boolean(data.firstName || data.lastName),
@@ -339,7 +338,7 @@
       diagnostics: {
         extractor: 'linkedin-profile-identity-v411',
         scopedCompany: Boolean(company),
-        directContactInfo: Boolean(data.email || data.phone),
+        directContactInfo: Boolean(directContact.email || directContact.phone),
         scopedExams: Boolean(exams)
       }
     };
