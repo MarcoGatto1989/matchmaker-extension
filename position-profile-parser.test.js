@@ -16,7 +16,7 @@ const linkedInCompanyOnlyTitle = parser.parseProfileHtml(
 assert.equal(linkedInCompanyOnlyTitle.success, false);
 
 const linkedInCompanyOccupationWithHeadline = parser.parseProfileHtml(
-  '<meta property="og:title" content="Ferdinand Plehn – RSM Ebner Stolz | LinkedIn"><script>{"occupation":"RSM Ebner Stolz","companyName":"RSM Ebner Stolz","headline":"Wirtschaftsprüfer und Steuerberater"}</script>',
+  '<meta property="og:title" content="Ferdinand Plehn – RSM Ebner Stolz | LinkedIn"><script>{"occupation":"Ferdinand Plehn – RSM Ebner Stolz","companyName":"RSM Ebner Stolz","headline":"Wirtschaftsprüfer und Steuerberater"}</script>',
   { platform: 'linkedin' },
 );
 assert.equal(linkedInCompanyOccupationWithHeadline.success, true);
