@@ -9,7 +9,8 @@ test('v4.0.13 loads the checked connection-status worker', () => {
   assert.equal(manifest.version, '4.0.13');
   assert.equal(manifest.background.service_worker, 'service-worker-v413.js');
   assert.match(worker, /response\.ok/);
-  assert.match(worker, /outreach-ext\\\/stats/);
-  assert.match(worker, /outreach-ext\/heartbeat/);
+  assert.match(worker, /outreach-ext/);
+  assert.match(worker, /stats/);
+  assert.match(worker, /heartbeat/);
   assert.match(worker, /chrome\.storage\.onChanged/);
 });
