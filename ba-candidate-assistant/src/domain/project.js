@@ -1,6 +1,12 @@
 import { makeId } from '../shared/ids.js';
 import { uniqueStrings } from '../shared/text.js';
 
+function optionalNumber(value) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 export const DEFAULT_WEIGHTS = Object.freeze({
   role: 25,
   skills: 25,
@@ -19,10 +25,10 @@ export function normalizeProject(input = {}) {
     targetRoles: uniqueStrings(input.targetRoles || []),
     mustHaveSkills: uniqueStrings(input.mustHaveSkills || []),
     preferredSkills: uniqueStrings(input.preferredSkills || []),
-    minimumExperience: Number.isFinite(Number(input.minimumExperience)) ? Number(input.minimumExperience) : null,
+    minimumExperience: optionalNumber(input.minimumExperience),
     experienceHard: Boolean(input.experienceHard),
     targetLocations: uniqueStrings(input.targetLocations || []),
-    maxRadiusKm: Number.isFinite(Number(input.maxRadiusKm)) ? Number(input.maxRadiusKm) : null,
+    maxRadiusKm: optionalNumber(input.maxRadiusKm),
     workTimes: uniqueStrings(input.workTimes || []),
     requiredLanguages: uniqueStrings(input.requiredLanguages || []),
     languageHard: Boolean(input.languageHard),
