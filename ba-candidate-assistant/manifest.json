@@ -4,7 +4,9 @@
   "short_name": "BA Kandidaten",
   "version": "1.0.0",
   "description": "Projektbezogene Kandidatenprüfung, Matching und Nachrichtenentwürfe für die BA Bewerberbörse.",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://arbeitsagentur.de/*",
     "https://www.arbeitsagentur.de/*",
@@ -28,10 +30,13 @@
         "src/adapters/normalizers-global.js",
         "src/adapters/ba-profile-adapter-global.js",
         "src/adapters/ba-search-adapter-global.js",
+        "src/content/message-field-global.js",
         "src/content/assistant-panel.js",
         "src/content/bootstrap.js"
       ],
-      "css": ["src/content/assistant-panel.css"],
+      "css": [
+        "src/content/assistant-panel.css"
+      ],
       "run_at": "document_idle"
     }
   ]
