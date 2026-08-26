@@ -1,18 +1,17 @@
 // Runs before popup.js. It keeps the legacy popup UI but routes every ESOS request
-// to the live ESOS CRM service and turns an existing HttpOnly browser session into
+// through the public ESOS domain and turns an existing HttpOnly browser session into
 // a successful extension login without sending the stored password again.
 (() => {
   'use strict';
 
-  const ESOS_V415_API_BASE = 'https://executive-sphere-production.up.railway.app';
-  const ESOS_V415_LEGACY_API_BASE = 'https://esos-web-production.up.railway.app';
+  const ESOS_V415_API_BASE = 'https://www.esos.cloud';
   const nativeFetch = globalThis.fetch.bind(globalThis);
   let sessionPromise = null;
 
   function esosV415RewriteUrl(raw) {
     try {
       const url = new URL(String(raw || ''));
-      if (url.origin === ESOS_V415_LEGACY_API_BASE) {
+      if (url.hostname.endsWith('.up.railway.app')) {
         const target = new URL(ESOS_V415_API_BASE);
         url.protocol = target.protocol;
         url.host = target.host;
