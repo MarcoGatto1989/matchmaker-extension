@@ -1,20 +1,17 @@
 // ESOS AI v4.0.15 — canonical production routing + authoritative ESOS browser session.
-// The active full-stack ESOS deployment is ESOS CRM. Legacy ESOS WEB URLs are migrated
-// transparently so the popup/worker cannot authenticate against the wrong Railway service.
+// All ESOS traffic uses the public ESOS domain. Stored Railway URLs are migrated
+// transparently so the popup/worker cannot authenticate against an internal service URL.
 importScripts('service-worker-v414.js');
 
-const ESOS_V415_API_BASE = 'https://executive-sphere-production.up.railway.app';
-const ESOS_V415_LEGACY_API_BASE = 'https://esos-web-production.up.railway.app';
+const ESOS_V415_API_BASE = 'https://www.esos.cloud';
 
 function esosV415CanonicalApiBase(value) {
   const raw = String(value || '').trim().replace(/\/$/, '');
   if (!raw) return ESOS_V415_API_BASE;
   try {
     const parsed = new URL(raw);
-    if (parsed.origin === ESOS_V415_LEGACY_API_BASE) return ESOS_V415_API_BASE;
-    if (parsed.hostname.endsWith('.up.railway.app') && parsed.origin !== ESOS_V415_API_BASE) {
-      return ESOS_V415_API_BASE;
-    }
+    if (parsed.hostname.endsWith('.up.railway.app')) return ESOS_V415_API_BASE;
+    if (parsed.origin === ESOS_V415_API_BASE) return ESOS_V415_API_BASE;
   } catch (_) {
     return ESOS_V415_API_BASE;
   }
