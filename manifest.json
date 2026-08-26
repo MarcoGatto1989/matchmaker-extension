@@ -21,8 +21,7 @@
     "https://*.licdn.com/*",
     "https://*.xingassets.com/*",
     "https://images.ctfassets.net/*",
-    "https://executive-sphere-production.up.railway.app/*",
-    "https://esos-web-production.up.railway.app/*",
+    "https://www.esos.cloud/*",
     "https://boot-outreach-api-production.up.railway.app/*"
   ],
   "action": {
