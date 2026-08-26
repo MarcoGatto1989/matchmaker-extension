@@ -1,4 +1,4 @@
-// ESOS AI v4.0.15 — canonical production routing + authoritative ESOS browser session.
+// ESOS AI v4.0.16 — canonical production routing + authoritative ESOS browser session.
 // All ESOS traffic uses the public ESOS domain. Stored Railway URLs are migrated
 // transparently so the popup/worker cannot authenticate against an internal service URL.
 importScripts('service-worker-v414.js');
@@ -18,8 +18,8 @@ function esosV415CanonicalApiBase(value) {
   return raw;
 }
 
-// background.js defined these as functions, so v4.0.15 can replace the routing
-// policy without editing the legacy queue implementation.
+// The existing worker functions are replaced here so this release can enforce the
+// canonical ESOS routing policy without changing the proven queue implementation.
 normalizeStoredEsosUrl = function esosV415NormalizeStoredEsosUrl(value) {
   return esosV415CanonicalApiBase(value);
 };
@@ -41,9 +41,9 @@ async function esosV415SyncSession() {
     await chrome.storage.local.set({ esos_url: ESOS_V415_API_BASE });
   } catch (_) {}
 
-  // v4.0.14 already performs the secure HttpOnly-cookie -> extension-session sync.
-  // Calling it after replacing getApiBase makes it read the cookie from ESOS CRM,
-  // i.e. the deployment the user is actually logged into.
+  // The prior session bridge performs the secure HttpOnly-cookie -> extension-session sync.
+  // Calling it after replacing getApiBase makes it read the cookie from the public ESOS
+  // domain, i.e. the deployment the user is actually logged into.
   if (typeof esosV414SyncBrowserSession !== 'function') {
     return { connected: false, source: 'session_sync_unavailable' };
   }
@@ -73,4 +73,4 @@ setTimeout(() => {
   esosV415SyncSession().catch(() => {});
 }, 40);
 
-console.log('[ESOS AI] v4.0.15 active: canonical ESOS CRM routing + authoritative browser session.');
+console.log('[ESOS AI] v4.0.16 active: canonical ESOS CRM routing + authoritative browser session.');
