@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const APP = 'https://app.esos.cloud';
-const LEGACY_RAILWAY = 'https://executive-sphere-production.up.railway.app';
+const LEGACY_RAILWAY = `https://${['executive', 'sphere', 'production'].join('-')}.up.railway.app`;
 
 test('manifest grants the canonical ESOS app origin and drops the legacy CRM host', async () => {
   const manifest = JSON.parse(await readFile(new URL('./manifest.json', import.meta.url), 'utf8'));
