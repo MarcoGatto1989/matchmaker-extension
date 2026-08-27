@@ -1,0 +1,34 @@
+#bak-root, #bak-root * { box-sizing: border-box; }
+#bak-root { position: fixed; z-index: 2147483646; right: 18px; bottom: 18px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #152033; }
+#bak-toggle { border: 0; border-radius: 999px; background: #16243a; color: #fff; padding: 12px 18px; font-size: 14px; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.22); cursor: pointer; }
+#bak-toggle[data-alert="true"]::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: #ffcf33; }
+#bak-panel { width: 390px; max-height: min(760px, calc(100vh - 40px)); overflow: auto; background: #f7f9fc; border: 1px solid #d9e0ea; border-radius: 18px; box-shadow: 0 18px 55px rgba(0,0,0,.28); display: none; }
+#bak-root[data-open="true"] #bak-panel { display: block; }
+#bak-root[data-open="true"] #bak-toggle { display: none; }
+.bak-head { position: sticky; top: 0; z-index: 1; padding: 16px; display: flex; align-items: center; justify-content: space-between; background: #16243a; color: #fff; }
+.bak-head strong { font-size: 17px; }
+.bak-head small { display: block; opacity: .72; margin-top: 2px; }
+.bak-close { border: 0; background: rgba(255,255,255,.12); color: #fff; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; font-size: 18px; }
+.bak-body { padding: 14px; }
+.bak-card { background: #fff; border: 1px solid #e0e6ef; border-radius: 14px; padding: 13px; margin-bottom: 10px; }
+.bak-title { font-size: 15px; font-weight: 800; margin-bottom: 5px; }
+.bak-sub { font-size: 12px; color: #68758a; line-height: 1.45; }
+.bak-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.bak-chip { display: inline-flex; padding: 4px 7px; border-radius: 999px; background: #edf2f8; color: #35445b; font-size: 11px; font-weight: 650; margin: 3px 4px 0 0; }
+.bak-score { width: 48px; height: 48px; border-radius: 13px; background: #eef4ff; display: grid; place-items: center; font-size: 17px; font-weight: 900; color: #285ca8; flex: 0 0 auto; }
+.bak-match { display: flex; gap: 10px; align-items: flex-start; }
+.bak-grow { flex: 1; min-width: 0; }
+.bak-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.bak-btn { border: 1px solid #cfd8e6; background: #fff; color: #24344c; border-radius: 9px; padding: 9px 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
+.bak-btn:hover { background: #f3f6fa; }
+.bak-btn.primary { border-color: #285ca8; background: #285ca8; color: #fff; }
+.bak-btn.danger { color: #a52a2a; }
+.bak-btn:disabled { opacity: .45; cursor: not-allowed; }
+.bak-select, .bak-textarea { width: 100%; border: 1px solid #cfd8e6; border-radius: 9px; background: #fff; padding: 9px; font: inherit; color: inherit; }
+.bak-textarea { min-height: 150px; resize: vertical; font-size: 12px; line-height: 1.45; }
+.bak-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #6b778b; font-weight: 800; margin: 10px 0 5px; }
+.bak-good { color: #23733c; }
+.bak-warn { color: #946200; }
+.bak-error { color: #a52a2a; }
+.bak-empty { text-align: center; color: #6b778b; padding: 20px 8px; }
+.bak-status { margin-top: 8px; font-size: 12px; line-height: 1.4; }

@@ -1,0 +1,11 @@
+{
+  "name": "ba-kandidaten",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Eigenständige Chrome-Erweiterung für projektbezogenes Kandidaten-Matching in der BA Bewerberbörse.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/background/service-worker.js && node --check src/domain/match-engine.js && node --check src/domain/message-composer.js && node --check src/storage/db.js && node --check src/dashboard/dashboard.js"
+  }
+}

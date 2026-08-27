@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BA Kandidaten</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">BA</div>
+        <div><strong>BA Kandidaten</strong><span>Recruiting Assistant</span></div>
+      </div>
+      <nav id="nav">
+        <button class="nav-item active" data-page="today">Heute</button>
+        <button class="nav-item" data-page="candidates">Kandidaten</button>
+        <button class="nav-item" data-page="projects">Projekte</button>
+        <button class="nav-item" data-page="messages">Nachrichten</button>
+        <button class="nav-item" data-page="settings">Einstellungen</button>
+      </nav>
+      <div class="privacy-note">Lokal im Browser · keine BA-Zugangsdaten · kein automatischer Versand</div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">Heute</h1>
+          <p id="page-subtitle">Dein aktueller BA-Kandidaten-Überblick.</p>
+        </div>
+        <div class="top-actions">
+          <button class="btn secondary" id="open-ba">BA Bewerberbörse öffnen</button>
+          <button class="btn primary" id="new-project">+ Projekt</button>
+        </div>
+      </header>
+      <section id="flash" class="flash" hidden></section>
+      <section id="content"></section>
+    </main>
+  </div>
+
+  <dialog id="project-dialog" class="modal">
+    <form method="dialog" id="project-form">
+      <div class="modal-head"><div><h2>Projekt</h2><p>Konkretes Recruiting-Mandat für das Matching.</p></div><button class="icon-btn" value="cancel" aria-label="Schließen">×</button></div>
+      <input type="hidden" name="id">
+      <div class="form-grid">
+        <label><span>Projektname *</span><input name="name" required placeholder="z. B. Steuerfachwirt Köln"></label>
+        <label><span>Kunde / Unternehmen</span><input name="clientName" placeholder="optional"></label>
+        <label class="wide"><span>Zielrollen</span><input name="targetRoles" placeholder="Steuerfachwirt/in, Steuerfachangestellte/r"></label>
+        <label class="wide"><span>Muss-Kenntnisse</span><input name="mustHaveSkills" placeholder="DATEV, Jahresabschluss"></label>
+        <label class="wide"><span>Bevorzugte Kenntnisse</span><input name="preferredSkills" placeholder="Lohnabrechnung, Unternehmen online"></label>
+        <label><span>Mindest-Berufserfahrung</span><input name="minimumExperience" type="number" min="0" step="1" placeholder="3"></label>
+        <label class="check"><input name="experienceHard" type="checkbox"><span>Mindest-Erfahrung ist zwingend</span></label>
+        <label class="wide"><span>Zielorte</span><input name="targetLocations" placeholder="Köln, Bonn"></label>
+        <label><span>Max. gewünschter Radius (km)</span><input name="maxRadiusKm" type="number" min="0" step="5" placeholder="50"></label>
+        <label><span>Arbeitszeitmodelle</span><input name="workTimes" placeholder="Vollzeit, Teilzeit"></label>
+        <label class="wide"><span>Erforderliche Sprachen</span><input name="requiredLanguages" placeholder="Deutsch"></label>
+        <label class="check"><input name="languageHard" type="checkbox"><span>Sprachanforderung ist zwingend</span></label>
+        <label><span>Absendername</span><input name="senderName" placeholder="Vorname Nachname"></label>
+        <label class="check"><input name="discloseClient" type="checkbox"><span>Kundenname im Anschreiben nennen</span></label>
+        <label class="wide"><span>Recruiter-Notizen</span><textarea name="recruiterNotes" rows="3" placeholder="Interne Hinweise zum Mandat"></textarea></label>
+      </div>
+      <div class="modal-actions"><button class="btn secondary" value="cancel">Abbrechen</button><button class="btn primary" id="save-project" value="default">Speichern</button></div>
+    </form>
+  </dialog>
+
+  <input type="file" id="backup-file" accept="application/json" hidden>
+  <input type="file" id="project-csv-file" accept=".csv,text/csv" hidden>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
