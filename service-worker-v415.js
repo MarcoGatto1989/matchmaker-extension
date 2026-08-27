@@ -4,8 +4,9 @@
 importScripts('service-worker-v414.js');
 
 const ESOS_V415_API_BASE = 'https://app.esos.cloud';
+const ESOS_V415_LEGACY_RAILWAY_ORIGIN = `https://${['executive', 'sphere', 'production'].join('-')}.up.railway.app`;
 const ESOS_V415_LEGACY_ORIGINS = new Set([
-  'https://executive-sphere-production.up.railway.app',
+  ESOS_V415_LEGACY_RAILWAY_ORIGIN,
   'https://esos.cloud',
   'https://www.esos.cloud',
 ]);
