@@ -1,4 +1,4 @@
-name: Validate ESOS extension branding
+name: Validate ESOS extension
 
 on:
   pull_request:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 jobs:
-  branding:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node branding.test.mjs
+      - run: node --test branding.test.mjs domain-routing.test.mjs

@@ -1,17 +1,23 @@
-// ESOS AI v4.0.16 — canonical production routing + authoritative ESOS browser session.
-// All ESOS traffic uses the public ESOS domain. Stored Railway URLs are migrated
-// transparently so the popup/worker cannot authenticate against an internal service URL.
+// ESOS AI v4.0.17 — canonical production routing + authoritative ESOS browser session.
+// All ESOS CRM/API traffic uses app.esos.cloud. Stored legacy web/Railway URLs are
+// migrated transparently so popup and worker always share the same backend origin.
 importScripts('service-worker-v414.js');
 
-const ESOS_V415_API_BASE = 'https://www.esos.cloud';
+const ESOS_V415_API_BASE = 'https://app.esos.cloud';
+const ESOS_V415_LEGACY_RAILWAY_ORIGIN = `https://${['executive', 'sphere', 'production'].join('-')}.up.railway.app`;
+const ESOS_V415_LEGACY_ORIGINS = new Set([
+  ESOS_V415_LEGACY_RAILWAY_ORIGIN,
+  'https://esos.cloud',
+  'https://www.esos.cloud',
+]);
 
 function esosV415CanonicalApiBase(value) {
   const raw = String(value || '').trim().replace(/\/$/, '');
   if (!raw) return ESOS_V415_API_BASE;
   try {
     const parsed = new URL(raw);
-    if (parsed.hostname.endsWith('.up.railway.app')) return ESOS_V415_API_BASE;
     if (parsed.origin === ESOS_V415_API_BASE) return ESOS_V415_API_BASE;
+    if (ESOS_V415_LEGACY_ORIGINS.has(parsed.origin)) return ESOS_V415_API_BASE;
   } catch (_) {
     return ESOS_V415_API_BASE;
   }
@@ -42,8 +48,8 @@ async function esosV415SyncSession() {
   } catch (_) {}
 
   // The prior session bridge performs the secure HttpOnly-cookie -> extension-session sync.
-  // Calling it after replacing getApiBase makes it read the cookie from the public ESOS
-  // domain, i.e. the deployment the user is actually logged into.
+  // Calling it after replacing getApiBase makes it read the cookie from app.esos.cloud,
+  // i.e. the canonical CRM/API deployment the extension must authenticate against.
   if (typeof esosV414SyncBrowserSession !== 'function') {
     return { connected: false, source: 'session_sync_unavailable' };
   }
@@ -73,4 +79,4 @@ setTimeout(() => {
   esosV415SyncSession().catch(() => {});
 }, 40);
 
-console.log('[ESOS AI] v4.0.16 active: canonical ESOS CRM routing + authoritative browser session.');
+console.log('[ESOS AI] v4.0.17 active: app.esos.cloud CRM/API routing + authoritative browser session.');
