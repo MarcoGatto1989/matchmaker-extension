@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('./service-worker-v418.js', import.meta.url), 'utf8');
 
-function makeContext({ extensionToken = '', sessionToken = 'session-jwt', heartbeatStatus = 200, rotateStatus = 200 } = {}) {
+function makeContext({ extensionToken = '', sessionToken = 'session-jwt', heartbeatStatuses = [200], rotateStatus = 200 } = {}) {
   const storage = {
     extension_token: extensionToken,
     esos_jwt: sessionToken,
@@ -13,6 +13,7 @@ function makeContext({ extensionToken = '', sessionToken = 'session-jwt', heartb
     esos_url: 'https://app.esos.cloud',
   };
   const calls = [];
+  let heartbeatIndex = 0;
   const listeners = { installed: [], startup: [], message: [] };
 
   const context = {
@@ -25,7 +26,9 @@ function makeContext({ extensionToken = '', sessionToken = 'session-jwt', heartb
     fetch: async (url, init = {}) => {
       calls.push({ url: String(url), init });
       if (String(url).endsWith('/api/outreach-ext/heartbeat')) {
-        return new Response('{}', { status: heartbeatStatus, headers: { 'Content-Type': 'application/json' } });
+        const status = heartbeatStatuses[Math.min(heartbeatIndex, heartbeatStatuses.length - 1)];
+        heartbeatIndex += 1;
+        return new Response('{}', { status, headers: { 'Content-Type': 'application/json' } });
       }
       if (String(url).endsWith('/api/outreach/config/regenerate-token')) {
         return new Response(JSON.stringify({ token: 'MM-EXT-auto-generated' }), {
@@ -73,15 +76,15 @@ function makeContext({ extensionToken = '', sessionToken = 'session-jwt', heartb
 }
 
 test('keeps a valid tenant extension token without rotating it', async () => {
-  const { context, storage, calls } = makeContext({ extensionToken: 'MM-EXT-existing', heartbeatStatus: 200 });
+  const { context, storage, calls } = makeContext({ extensionToken: 'MM-EXT-existing', heartbeatStatuses: [200] });
   const result = await context.esosV418EnsureExtensionToken();
   assert.equal(result.connected, true);
   assert.equal(storage.extension_token, 'MM-EXT-existing');
   assert.equal(calls.some(call => call.url.endsWith('/api/outreach/config/regenerate-token')), false);
 });
 
-test('replaces a missing or rejected extension token from the active ESOS browser session', async () => {
-  const { context, storage, calls } = makeContext({ extensionToken: '', heartbeatStatus: 401 });
+test('creates a tenant extension token when the browser has none', async () => {
+  const { context, storage, calls } = makeContext({ extensionToken: '', heartbeatStatuses: [200] });
   const result = await context.esosV418EnsureExtensionToken();
   assert.equal(result.connected, true);
   assert.equal(storage.extension_token, 'MM-EXT-auto-generated');
@@ -89,4 +92,11 @@ test('replaces a missing or rejected extension token from the active ESOS browse
   assert.ok(rotation);
   assert.equal(rotation.init.method, 'POST');
   assert.equal(rotation.init.headers.Authorization, 'Bearer session-jwt');
+});
+
+test('replaces an explicitly rejected tenant extension token', async () => {
+  const { context, storage } = makeContext({ extensionToken: 'MM-EXT-stale', heartbeatStatuses: [401, 200] });
+  const result = await context.esosV418EnsureExtensionToken();
+  assert.equal(result.connected, true);
+  assert.equal(storage.extension_token, 'MM-EXT-auto-generated');
 });
