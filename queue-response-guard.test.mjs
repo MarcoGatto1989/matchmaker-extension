@@ -5,15 +5,18 @@ import test from 'node:test';
 const manifest = JSON.parse(fs.readFileSync(new URL('./manifest.json', import.meta.url), 'utf8'));
 const socialWorker = fs.readFileSync(new URL('./service-worker-v406.js', import.meta.url), 'utf8');
 const v419Url = new URL('./service-worker-v419.js', import.meta.url);
+const activeWorkerUrl = new URL('./service-worker-v420.js', import.meta.url);
 
 function readV419() {
   assert.ok(fs.existsSync(v419Url), 'service-worker-v419.js must exist');
   return fs.readFileSync(v419Url, 'utf8');
 }
 
-test('v4.0.19 normalizes failed or malformed queue responses before legacy job parsing', () => {
-  assert.equal(manifest.version, '4.0.19');
-  assert.equal(manifest.background.service_worker, 'service-worker-v419.js');
+test('v4.0.19 queue guard remains in the active v4.0.20 worker chain', () => {
+  assert.equal(manifest.version, '4.0.20');
+  assert.equal(manifest.background.service_worker, 'service-worker-v420.js');
+  const activeWorker = fs.readFileSync(activeWorkerUrl, 'utf8');
+  assert.match(activeWorker, /importScripts\('service-worker-v419\.js'\)/);
 
   const worker = readV419();
   assert.match(worker, /importScripts\('service-worker-v418\.js'\)/);
