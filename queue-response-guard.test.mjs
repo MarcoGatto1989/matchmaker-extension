@@ -20,7 +20,7 @@ test('v4.0.19 normalizes failed or malformed queue responses before legacy job p
   assert.match(worker, /outreach-ext\/jobs\/queued/);
   assert.match(worker, /response\.clone\(\)\.json\(\)/);
   assert.match(worker, /Array\.isArray\(payload\)/);
-  assert.match(worker, /new Response\('\\[\\]'/);
+  assert.ok(worker.includes("new Response('[]'"));
 });
 
 test('v4.0.19 verifies or self-heals the extension token before queue work', () => {
