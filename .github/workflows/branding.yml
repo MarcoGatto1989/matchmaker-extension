@@ -16,4 +16,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test branding.test.mjs domain-routing.test.mjs extension-token-selfheal.test.mjs
+      - run: node --test branding.test.mjs domain-routing.test.mjs extension-token-selfheal.test.mjs queue-response-guard.test.mjs
