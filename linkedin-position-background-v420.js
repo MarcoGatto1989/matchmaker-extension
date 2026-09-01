@@ -52,6 +52,19 @@
       .trim();
   }
 
+  function linkedinTitleContext(value) {
+    const cleaned = clean(value)
+      .replace(/\s*[|]\s*LinkedIn(?:\s.*)?$/i, '')
+      .replace(/^LinkedIn\s*[|–—-]\s*/i, '')
+      .trim();
+    if (!cleaned) return { name: '', company: '' };
+    const parts = cleaned.split(/\s+(?:–|—|-)\s+/).map(clean).filter(Boolean);
+    const name = parts[0] || '';
+    const tail = parts.slice(1).join(' – ');
+    const company = tail && !ROLE_SIGNAL.test(tail) && !/\s(?:bei|at|@)\s/i.test(tail) ? tail : '';
+    return { name, company };
+  }
+
   function plausibleLinkedInPosition(value, context = {}) {
     const position = clean(value);
     if (!position || position.length < 2 || position.length > 220) return false;
@@ -95,6 +108,8 @@
   }
 
   function renderedContext(doc) {
+    const titleMeta = doc?.querySelector?.('meta[property="og:title"], meta[name="twitter:title"]')?.getAttribute?.('content') || doc?.title || '';
+    const titleContext = linkedinTitleContext(titleMeta);
     const name = visibleText(first(doc, [
       '[data-anonymize="person-name"]',
       'h1.text-heading-xlarge',
@@ -102,14 +117,14 @@
       'main h1',
       '[role="main"] h1',
       'h1',
-    ]));
+    ])) || titleContext.name;
     const company = companyText(first(doc, [
       'button[aria-label*="Aktuelle Firma" i]',
       'button[aria-label*="Current company" i]',
       '[data-anonymize="company-name"]',
       '.pv-text-details__right-panel-item-text',
       'a[href*="/company/"]',
-    ]));
+    ])) || titleContext.company;
     const headline = visibleText(first(doc, [
       '[data-anonymize="headline"]',
       '.text-body-medium.break-words',
@@ -272,6 +287,7 @@
   const api = {
     sameLinkedInProfile,
     normalizedSameOriginProfileUrl,
+    linkedinTitleContext,
     plausibleLinkedInPosition,
     inspectLinkedInProfile,
   };
