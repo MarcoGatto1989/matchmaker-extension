@@ -34,6 +34,12 @@ assert.throws(
   /LinkedIn/i,
 );
 
+assert.deepEqual(
+  bridge.linkedinTitleContext('Nathalie M. Schucht-Funk – Forvis Mazars Group | LinkedIn'),
+  { name: 'Nathalie M. Schucht-Funk', company: 'Forvis Mazars Group' },
+  'LinkedIn title context must expose the person/company header so it can be rejected',
+);
+
 assert.equal(
   bridge.plausibleLinkedInPosition('Nathalie M. Schucht-Funk – Forvis Mazars Group', {
     name: 'Nathalie M. Schucht-Funk',
