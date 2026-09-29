@@ -519,62 +519,104 @@ async function networkSyncRecordSuccessfulUrl({ network, url, candidateName }) {
   await chrome.storage.local.set({ [NETWORK_SYNC_SUCCESS_STORAGE_KEY]: next.slice(-1000) });
 }
 
+async function networkSyncWaitForTabReady(tabId, timeoutMs = 20000) {
+  const end = Date.now() + timeoutMs;
+  let lastUrl = '';
+  let stableSince = 0;
+  while (Date.now() < end) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      const url = String(tab?.url || '');
+      if (url !== lastUrl) {
+        lastUrl = url;
+        stableSince = Date.now();
+      }
+      if (tab?.status === 'complete' && Date.now() - stableSince >= 350) return true;
+    } catch (_) {
+      return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
 async function networkSyncFindProfileTab(profileUrl, network) {
   const wanted = networkSyncCanonicalProfile(profileUrl, network);
   if (!wanted) return null;
   const patterns = network === 'xing'
     ? ['https://xing.com/*', 'https://www.xing.com/*', 'https://*.xing.com/*']
     : ['https://linkedin.com/*', 'https://www.linkedin.com/*', 'https://*.linkedin.com/*'];
-  const tabs = await chrome.tabs.query({ url: patterns });
+  const tabs = await chrome.tabs.query({ currentWindow: true, url: patterns });
   return (tabs || []).find(tab => Number.isInteger(tab.id) && networkSyncCanonicalProfile(tab.url, network) === wanted) || null;
 }
 
 async function networkSyncEnsureContent(tabId) {
   try {
     const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (ping?.status === 'ok') return;
+    if (ping?.status === 'ok') return true;
   } catch (_) {}
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-  await new Promise(resolve => setTimeout(resolve, 250));
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await new Promise(resolve => setTimeout(resolve, 250));
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
-async function networkSyncSend(tabId, message, timeoutMs = 12000) {
-  await networkSyncEnsureContent(tabId);
-  return new Promise(resolve => {
-    let settled = false;
-    const finish = value => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(value || { success: false, error: 'Keine Antwort von der Plattformseite.' });
-    };
-    const timer = setTimeout(() => finish({ success: false, error: 'Zeitüberschreitung bei der Plattformaktion.' }), timeoutMs);
-    chrome.tabs.sendMessage(tabId, message, result => {
-      if (chrome.runtime.lastError) finish({ success: false, error: chrome.runtime.lastError.message });
-      else finish(result);
-    });
-  });
+async function networkSyncSendWithRetry(tabId, message, retries = 30, delayMs = 300) {
+  let lastError = null;
+  let injected = false;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      const result = await chrome.tabs.sendMessage(tabId, message);
+      if (result) return result;
+    } catch (error) {
+      lastError = error;
+      if (!injected) {
+        injected = true;
+        await networkSyncEnsureContent(tabId);
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  return { success: false, error: lastError?.message || 'Content-Script nicht erreichbar.' };
 }
 
-async function networkSyncWaitForXingTalentManager(sourceTabId, previousXingTabIds, timeoutMs = 18000) {
+async function networkSyncWaitForXingTalentManager(sourceTabId, previousXingTabIds, beforeUrl, timeoutMs = 16000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const source = await chrome.tabs.get(sourceTabId);
-      if (/\/xtm\/profiles\//i.test(String(source?.url || ''))) return source;
+      const sourceUrl = String(source?.url || '');
+      if (sourceUrl && sourceUrl !== beforeUrl && (/\/xtm(?:\/|\?|$)/i.test(sourceUrl) || /talent-?manager/i.test(sourceUrl))) {
+        return source;
+      }
     } catch (_) {}
-    const tabs = await chrome.tabs.query({
-      url: ['https://xing.com/*', 'https://www.xing.com/*', 'https://*.xing.com/*'],
-    });
-    const target = (tabs || []).find(tab =>
-      Number.isInteger(tab.id) &&
-      /\/xtm\/profiles\//i.test(String(tab.url || '')) &&
-      (!previousXingTabIds.has(tab.id) || tab.id === sourceTabId)
+
+    const all = await chrome.tabs.query({ currentWindow: true });
+    const fresh = (all || []).find(tab =>
+      !previousXingTabIds.has(tab.id)
+      && /^https:\/\/(?:www\.)?xing\.com\//i.test(String(tab.url || ''))
+      && (/\/xtm(?:\/|\?|$)/i.test(String(tab.url || '')) || /talent-?manager/i.test(String(tab.url || '')))
     );
-    if (target) return target;
+    if (fresh) return fresh;
     await new Promise(resolve => setTimeout(resolve, 250));
   }
-  return null;
+  try { return await chrome.tabs.get(sourceTabId); } catch (_) { return null; }
+}
+
+async function networkSyncCompleteJob(jobId, apiBase, token, status, error) {
+  const response = await safeFetch(`${apiBase}/api/outreach-ext/jobs/${jobId}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ status, error: error || null }),
+  }, 12000);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`ESOS-Status konnte nicht gespeichert werden (${response.status})${detail ? ': ' + detail.slice(0, 220) : ''}`);
+  }
+  return response.json().catch(() => null);
 }
 
 async function runPlatformProjectAdd(job, apiBase, token) {
@@ -596,21 +638,21 @@ async function runPlatformProjectAdd(job, apiBase, token) {
     sourceTab = await networkSyncFindProfileTab(profileUrl, network);
     if (!sourceTab) {
       sourceTab = await chrome.tabs.create({ url: profileUrl, active: true });
-      try { await waitForTabReady(sourceTab.id, 25000); } catch (_) {}
+      try { await networkSyncWaitForTabReady(sourceTab.id, 25000); } catch (_) {}
       await new Promise(resolve => setTimeout(resolve, 1800));
     } else {
       try { await chrome.tabs.update(sourceTab.id, { active: true }); } catch (_) {}
       if (sourceTab.status !== 'complete') {
-        try { await waitForTabReady(sourceTab.id, 15000); } catch (_) {}
+        try { await networkSyncWaitForTabReady(sourceTab.id, 15000); } catch (_) {}
       }
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     if (network === 'linkedin') {
-      const result = await networkSyncSend(sourceTab.id, { type: 'ESOS_LINKEDIN_SAVE_SALES_NAV' }, 12000);
+      const result = await networkSyncSendWithRetry(sourceTab.id, { type: 'ESOS_LINKEDIN_SAVE_SALES_NAV' }, 25, 250);
       if (!result?.success) throw new Error(result?.error || 'LinkedIn: Speichern im Sales Navigator fehlgeschlagen.');
       succeeded = true;
-      await completeJob(job.id, apiBase, token, 'completed', null);
+      await networkSyncCompleteJob(job.id, apiBase, token, 'completed', null);
       await networkSyncRecordSuccessfulUrl({
         network: 'linkedin',
         url: sourceProfileUrl,
@@ -627,29 +669,29 @@ async function runPlatformProjectAdd(job, apiBase, token) {
     });
     const previousIds = new Set((previousTabs || []).map(tab => tab.id).filter(Number.isInteger));
 
-    const stage1 = await networkSyncSend(sourceTab.id, { type: 'ESOS_XING_OPEN_TALENT_MANAGER' }, 10000);
+    const stage1 = await networkSyncSendWithRetry(sourceTab.id, { type: 'ESOS_XING_OPEN_TALENT_MANAGER' }, 30, 300);
     if (!stage1?.success) throw new Error(stage1?.error || 'XING: TalentManager konnte nicht geöffnet werden.');
 
-    targetTab = await networkSyncWaitForXingTalentManager(sourceTab.id, previousIds, 18000);
+    targetTab = await networkSyncWaitForXingTalentManager(sourceTab.id, previousIds, stage1.beforeUrl || sourceTab.url || '', 16000);
     if (!targetTab) throw new Error('XING: Nach „Im TalentManager ansehen“ wurde kein TalentManager-Profil geladen.');
 
     try { await chrome.tabs.update(targetTab.id, { active: true }); } catch (_) {}
     if (targetTab.status !== 'complete') {
-      try { await waitForTabReady(targetTab.id, 15000); } catch (_) {}
+      try { await networkSyncWaitForTabReady(targetTab.id, 20000); } catch (_) {}
     }
     await new Promise(resolve => setTimeout(resolve, 900));
 
-    const stage2 = await networkSyncSend(targetTab.id, {
+    const stage2 = await networkSyncSendWithRetry(targetTab.id, {
       type: 'ESOS_XING_ADD_PROJECT',
       payload: {
         project_name: projectName,
         project_url: payload.projectUrl || '',
       },
-    }, 30000);
+    }, 40, 300);
     if (!stage2?.success) throw new Error(stage2?.error || 'XING: Hinzufügen zum Projekt fehlgeschlagen.');
 
     succeeded = true;
-    await completeJob(job.id, apiBase, token, 'completed', null);
+    await networkSyncCompleteJob(job.id, apiBase, token, 'completed', null);
     await networkSyncRecordSuccessfulUrl({
       network: 'xing',
       url: sourceProfileUrl,
@@ -666,7 +708,11 @@ async function runPlatformProjectAdd(job, apiBase, token) {
   } catch (error) {
     const reason = error?.message || 'Network-Sync fehlgeschlagen.';
     console.error('[Network Sync] Fehler:', reason);
-    await completeJob(job.id, apiBase, token, 'failed', reason);
+    try {
+      await networkSyncCompleteJob(job.id, apiBase, token, 'failed', reason);
+    } catch (statusError) {
+      console.error('[Network Sync] ESOS-Fehlerstatus konnte nicht gespeichert werden:', statusError?.message || statusError);
+    }
     // Deliberately keep source/target tabs open so the user can repair failures manually.
   } finally {
     if (!succeeded) {
