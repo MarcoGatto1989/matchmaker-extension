@@ -494,6 +494,31 @@ function networkSyncCanonicalProfile(raw, network) {
   }
 }
 
+const NETWORK_SYNC_SUCCESS_STORAGE_KEY = 'esos_network_sync_success_urls_v1';
+
+async function networkSyncRecordSuccessfulUrl({ network, url, candidateName }) {
+  const cleanUrl = String(url || '').trim();
+  if (!cleanUrl) return;
+  const stored = await chrome.storage.local.get(NETWORK_SYNC_SUCCESS_STORAGE_KEY);
+  const existing = Array.isArray(stored?.[NETWORK_SYNC_SUCCESS_STORAGE_KEY])
+    ? stored[NETWORK_SYNC_SUCCESS_STORAGE_KEY]
+    : [];
+  const canonical = networkSyncCanonicalProfile(cleanUrl, network) || cleanUrl.toLowerCase();
+  const next = existing.filter(entry => {
+    const entryNetwork = String(entry?.network || '');
+    const entryUrl = String(entry?.url || '');
+    const entryCanonical = networkSyncCanonicalProfile(entryUrl, entryNetwork) || entryUrl.toLowerCase();
+    return entryCanonical !== canonical;
+  });
+  next.push({
+    network,
+    url: cleanUrl,
+    candidateName: String(candidateName || '').trim() || null,
+    succeededAt: new Date().toISOString(),
+  });
+  await chrome.storage.local.set({ [NETWORK_SYNC_SUCCESS_STORAGE_KEY]: next.slice(-1000) });
+}
+
 async function networkSyncFindProfileTab(profileUrl, network) {
   const wanted = networkSyncCanonicalProfile(profileUrl, network);
   if (!wanted) return null;
@@ -557,6 +582,7 @@ async function runPlatformProjectAdd(job, apiBase, token) {
   const profileUrl = payload.profileUrl || job.linkedin_url;
   const network = payload.network || (String(profileUrl).includes('xing.com') ? 'xing' : 'linkedin');
   const projectName = String(payload.projectName || '').trim();
+  const sourceProfileUrl = String(profileUrl || '').trim();
   let sourceTab = null;
   let targetTab = null;
   let succeeded = false;
@@ -585,6 +611,11 @@ async function runPlatformProjectAdd(job, apiBase, token) {
       if (!result?.success) throw new Error(result?.error || 'LinkedIn: Speichern im Sales Navigator fehlgeschlagen.');
       succeeded = true;
       await completeJob(job.id, apiBase, token, 'completed', null);
+      await networkSyncRecordSuccessfulUrl({
+        network: 'linkedin',
+        url: sourceProfileUrl,
+        candidateName: job.candidate_name,
+      });
       console.log(`[Network Sync] ${job.candidate_name} im LinkedIn Sales Navigator gespeichert.`);
       try { await chrome.tabs.remove(sourceTab.id); } catch (_) {}
       sourceTab = null;
@@ -619,6 +650,11 @@ async function runPlatformProjectAdd(job, apiBase, token) {
 
     succeeded = true;
     await completeJob(job.id, apiBase, token, 'completed', null);
+    await networkSyncRecordSuccessfulUrl({
+      network: 'xing',
+      url: sourceProfileUrl,
+      candidateName: job.candidate_name,
+    });
     console.log(`[Network Sync] ${job.candidate_name} in „${projectName}“ (XING TalentManager) einsortiert.`);
 
     const idsToClose = new Set([sourceTab?.id, targetTab?.id].filter(Number.isInteger));
