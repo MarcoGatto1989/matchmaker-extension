@@ -473,64 +473,173 @@ async function runPositionCheck(job, apiBase, token) {
   }
 }
 
-// ── Social Finder: assign profiles to provider projects ────────────────
+// ── ESOS Network Sync — proven LinkedHelper tab workflow ───────────────
+function networkSyncCanonicalProfile(raw, network) {
+  try {
+    const url = new URL(String(raw || ''));
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+    const expected = network === 'xing' ? 'xing.com' : 'linkedin.com';
+    if (host !== expected && !host.endsWith('.' + expected)) return '';
+    if (network === 'linkedin') {
+      const match = url.pathname.match(/^\/in\/([^/]+)/i);
+      return match?.[1] ? `linkedin:${decodeURIComponent(match[1]).toLowerCase()}` : '';
+    }
+    const profile = url.pathname.match(/^\/profile\/([^/]+)/i);
+    if (profile?.[1]) return `xing:profile:${decodeURIComponent(profile[1]).toLowerCase()}`;
+    const pages = url.pathname.match(/^\/pages\/([^/]+)/i);
+    if (pages?.[1]) return `xing:pages:${decodeURIComponent(pages[1]).toLowerCase()}`;
+    return '';
+  } catch (_) {
+    return '';
+  }
+}
+
+async function networkSyncFindProfileTab(profileUrl, network) {
+  const wanted = networkSyncCanonicalProfile(profileUrl, network);
+  if (!wanted) return null;
+  const patterns = network === 'xing'
+    ? ['https://xing.com/*', 'https://www.xing.com/*', 'https://*.xing.com/*']
+    : ['https://linkedin.com/*', 'https://www.linkedin.com/*', 'https://*.linkedin.com/*'];
+  const tabs = await chrome.tabs.query({ url: patterns });
+  return (tabs || []).find(tab => Number.isInteger(tab.id) && networkSyncCanonicalProfile(tab.url, network) === wanted) || null;
+}
+
+async function networkSyncEnsureContent(tabId) {
+  try {
+    const ping = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    if (ping?.status === 'ok') return;
+  } catch (_) {}
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+  await new Promise(resolve => setTimeout(resolve, 250));
+}
+
+async function networkSyncSend(tabId, message, timeoutMs = 12000) {
+  await networkSyncEnsureContent(tabId);
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value || { success: false, error: 'Keine Antwort von der Plattformseite.' });
+    };
+    const timer = setTimeout(() => finish({ success: false, error: 'Zeitüberschreitung bei der Plattformaktion.' }), timeoutMs);
+    chrome.tabs.sendMessage(tabId, message, result => {
+      if (chrome.runtime.lastError) finish({ success: false, error: chrome.runtime.lastError.message });
+      else finish(result);
+    });
+  });
+}
+
+async function networkSyncWaitForXingTalentManager(sourceTabId, previousXingTabIds, timeoutMs = 18000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const source = await chrome.tabs.get(sourceTabId);
+      if (/\/xtm\/profiles\//i.test(String(source?.url || ''))) return source;
+    } catch (_) {}
+    const tabs = await chrome.tabs.query({
+      url: ['https://xing.com/*', 'https://www.xing.com/*', 'https://*.xing.com/*'],
+    });
+    const target = (tabs || []).find(tab =>
+      Number.isInteger(tab.id) &&
+      /\/xtm\/profiles\//i.test(String(tab.url || '')) &&
+      (!previousXingTabIds.has(tab.id) || tab.id === sourceTabId)
+    );
+    if (target) return target;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
 async function runPlatformProjectAdd(job, apiBase, token) {
   const payload = job.payload || {};
   const profileUrl = payload.profileUrl || job.linkedin_url;
   const network = payload.network || (String(profileUrl).includes('xing.com') ? 'xing' : 'linkedin');
-  let tab;
+  const projectName = String(payload.projectName || '').trim();
+  let sourceTab = null;
+  let targetTab = null;
+  let succeeded = false;
 
   try {
     const validProfile = network === 'xing'
-      ? /^https:\/\/(www\.)?xing\.com\//i.test(String(profileUrl || ''))
-      : /^https:\/\/(www\.)?linkedin\.com\//i.test(String(profileUrl || ''));
+      ? /^https:\/\/(?:[^/]+\.)?xing\.com\/(?:profile|pages)\//i.test(String(profileUrl || ''))
+      : /^https:\/\/(?:[^/]+\.)?linkedin\.com\/in\//i.test(String(profileUrl || ''));
     if (!validProfile) throw new Error(`Ungültiger ${network === 'xing' ? 'XING' : 'LinkedIn'}-Profillink.`);
-    if (!String(payload.projectName || '').trim()) throw new Error('Projektname fehlt.');
 
-    tab = await chrome.tabs.create({ url: profileUrl, active: false });
-    try {
-      await waitForTabReady(tab.id, 25000);
-    } catch (error) {
-      console.warn('[Netzwerk-Projekt] Tab-Ready nicht bestätigt:', error.message);
+    sourceTab = await networkSyncFindProfileTab(profileUrl, network);
+    if (!sourceTab) {
+      sourceTab = await chrome.tabs.create({ url: profileUrl, active: true });
+      try { await waitForTabReady(sourceTab.id, 25000); } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 1800));
+    } else {
+      try { await chrome.tabs.update(sourceTab.id, { active: true }); } catch (_) {}
+      if (sourceTab.status !== 'complete') {
+        try { await waitForTabReady(sourceTab.id, 15000); } catch (_) {}
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-    await new Promise(resolve => setTimeout(resolve, 4000));
 
-    const response = await new Promise(resolve => {
-      const timer = setTimeout(() => resolve({ success: false, error: 'Zeitüberschreitung beim Einsortieren in das Netzwerk-Projekt.' }), 35000);
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'ADD_TO_PLATFORM_PROJECT',
-        payload: {
-          network,
-          profile_url: profileUrl,
-          project_name: payload.projectName,
-          project_url: payload.projectUrl || '',
-          target_system: payload.targetSystem || '',
-        },
-      }, result => {
-        clearTimeout(timer);
-        if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
-        else resolve(result || { success: false, error: 'Keine Antwort von der Plattformseite.' });
-      });
+    if (network === 'linkedin') {
+      const result = await networkSyncSend(sourceTab.id, { type: 'ESOS_LINKEDIN_SAVE_SALES_NAV' }, 12000);
+      if (!result?.success) throw new Error(result?.error || 'LinkedIn: Speichern im Sales Navigator fehlgeschlagen.');
+      succeeded = true;
+      await completeJob(job.id, apiBase, token, 'completed', null);
+      console.log(`[Network Sync] ${job.candidate_name} im LinkedIn Sales Navigator gespeichert.`);
+      try { await chrome.tabs.remove(sourceTab.id); } catch (_) {}
+      sourceTab = null;
+      return;
+    }
+
+    const previousTabs = await chrome.tabs.query({
+      url: ['https://xing.com/*', 'https://www.xing.com/*', 'https://*.xing.com/*'],
     });
+    const previousIds = new Set((previousTabs || []).map(tab => tab.id).filter(Number.isInteger));
 
-    await completeJob(
-      job.id,
-      apiBase,
-      token,
-      response.success ? 'completed' : 'failed',
-      response.success ? null : (response.error || 'Einsortierung fehlgeschlagen.'),
-    );
-    if (response.success) console.log(`[Netzwerk-Projekt] ${job.candidate_name} in „${payload.projectName}“ einsortiert.`);
-  } catch (error) {
-    console.error('[Netzwerk-Projekt] Fehler:', error.message);
-    await completeJob(job.id, apiBase, token, 'failed', error.message || 'Einsortierung fehlgeschlagen.');
-  } finally {
-    if (tab?.id) {
-      try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    const stage1 = await networkSyncSend(sourceTab.id, { type: 'ESOS_XING_OPEN_TALENT_MANAGER' }, 10000);
+    if (!stage1?.success) throw new Error(stage1?.error || 'XING: TalentManager konnte nicht geöffnet werden.');
+
+    targetTab = await networkSyncWaitForXingTalentManager(sourceTab.id, previousIds, 18000);
+    if (!targetTab) throw new Error('XING: Nach „Im TalentManager ansehen“ wurde kein TalentManager-Profil geladen.');
+
+    try { await chrome.tabs.update(targetTab.id, { active: true }); } catch (_) {}
+    if (targetTab.status !== 'complete') {
+      try { await waitForTabReady(targetTab.id, 15000); } catch (_) {}
     }
-    // Diese Jobs gehören zur interaktiven ESOS-Verarbeitung und sollen die Liste
-    // unabhängig von Outreach-Limits zügig abarbeiten.
-    setTimeout(() => processNextJob(), 1200);
+    await new Promise(resolve => setTimeout(resolve, 900));
+
+    const stage2 = await networkSyncSend(targetTab.id, {
+      type: 'ESOS_XING_ADD_PROJECT',
+      payload: {
+        project_name: projectName,
+        project_url: payload.projectUrl || '',
+      },
+    }, 30000);
+    if (!stage2?.success) throw new Error(stage2?.error || 'XING: Hinzufügen zum Projekt fehlgeschlagen.');
+
+    succeeded = true;
+    await completeJob(job.id, apiBase, token, 'completed', null);
+    console.log(`[Network Sync] ${job.candidate_name} in „${projectName}“ (XING TalentManager) einsortiert.`);
+
+    const idsToClose = new Set([sourceTab?.id, targetTab?.id].filter(Number.isInteger));
+    for (const tabId of idsToClose) {
+      try { await chrome.tabs.remove(tabId); } catch (_) {}
+    }
+    sourceTab = null;
+    targetTab = null;
+  } catch (error) {
+    const reason = error?.message || 'Network-Sync fehlgeschlagen.';
+    console.error('[Network Sync] Fehler:', reason);
+    await completeJob(job.id, apiBase, token, 'failed', reason);
+    // Deliberately keep source/target tabs open so the user can repair failures manually.
+  } finally {
+    if (!succeeded) {
+      try {
+        const tabId = targetTab?.id || sourceTab?.id;
+        if (Number.isInteger(tabId)) await chrome.tabs.update(tabId, { active: true });
+      } catch (_) {}
+    }
+    setTimeout(() => processNextJob(), 900);
   }
 }
 
