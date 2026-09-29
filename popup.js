@@ -768,3 +768,59 @@ function loadOutreachStatus() {
     });
   } catch (_) {}
 }
+
+
+const NETWORK_SYNC_SUCCESS_STORAGE_KEY = 'esos_network_sync_success_urls_v1';
+
+async function loadNetworkSyncSuccessUrls() {
+  const textarea = document.getElementById('network-sync-success-urls');
+  const count = document.getElementById('network-sync-url-count');
+  if (!textarea || !count) return;
+  const stored = await chrome.storage.local.get(NETWORK_SYNC_SUCCESS_STORAGE_KEY);
+  const entries = Array.isArray(stored?.[NETWORK_SYNC_SUCCESS_STORAGE_KEY])
+    ? stored[NETWORK_SYNC_SUCCESS_STORAGE_KEY]
+    : [];
+  const urls = entries.map(entry => String(entry?.url || '').trim()).filter(Boolean);
+  textarea.value = urls.join('\n');
+  count.textContent = String(urls.length);
+}
+
+const copyNetworkSyncUrlsBtn = document.getElementById('copy-network-sync-urls');
+const clearNetworkSyncUrlsBtn = document.getElementById('clear-network-sync-urls');
+const networkSyncUrlStatus = document.getElementById('network-sync-url-status');
+
+copyNetworkSyncUrlsBtn?.addEventListener('click', async () => {
+  const textarea = document.getElementById('network-sync-success-urls');
+  const value = String(textarea?.value || '').trim();
+  if (!value) {
+    if (networkSyncUrlStatus) networkSyncUrlStatus.textContent = 'Keine erfolgreichen URLs vorhanden.';
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    if (networkSyncUrlStatus) networkSyncUrlStatus.textContent = '✅ URL-Liste kopiert.';
+  } catch (_) {
+    textarea?.focus();
+    textarea?.select();
+    try {
+      document.execCommand('copy');
+      if (networkSyncUrlStatus) networkSyncUrlStatus.textContent = '✅ URL-Liste kopiert.';
+    } catch (error) {
+      if (networkSyncUrlStatus) networkSyncUrlStatus.textContent = '❌ Kopieren fehlgeschlagen.';
+    }
+  }
+});
+
+clearNetworkSyncUrlsBtn?.addEventListener('click', async () => {
+  await chrome.storage.local.set({ [NETWORK_SYNC_SUCCESS_STORAGE_KEY]: [] });
+  await loadNetworkSyncSuccessUrls();
+  if (networkSyncUrlStatus) networkSyncUrlStatus.textContent = 'Liste geleert.';
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[NETWORK_SYNC_SUCCESS_STORAGE_KEY]) {
+    loadNetworkSyncSuccessUrls().catch(() => {});
+  }
+});
+
+loadNetworkSyncSuccessUrls().catch(() => {});

@@ -8,7 +8,11 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 const bridgePath = path.join(root, 'linkedin-position-background-v420.js');
 const workerPath = path.join(root, 'service-worker-v420.js');
 
-assert.equal(manifest.version, '4.0.20', 'LinkedIn background position fix must bump the extension version');
+const [major, minor, patch] = String(manifest.version || '0.0.0').split('.').map(Number);
+assert.ok(
+  major > 4 || (major === 4 && (minor > 0 || (minor === 0 && patch >= 20))),
+  'LinkedIn background position fix must remain at version 4.0.20 or newer',
+);
 assert.equal(manifest.background?.service_worker, 'service-worker-v420.js');
 assert.equal(fs.existsSync(bridgePath), true, 'same-origin LinkedIn background bridge must exist');
 assert.equal(fs.existsSync(workerPath), true, 'v4.0.20 service worker must exist');

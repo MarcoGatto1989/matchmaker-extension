@@ -22,6 +22,24 @@
         .catch(err => sendResponse({ success: false, error: err.message }));
       return true;
     }
+    if (msg.type === 'ESOS_XING_OPEN_TALENT_MANAGER') {
+      openXingTalentManagerStage()
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+    if (msg.type === 'ESOS_XING_ADD_PROJECT') {
+      addXingTalentManagerProject(msg.payload?.project_name || '', msg.payload?.project_url || '')
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+    if (msg.type === 'ESOS_LINKEDIN_SAVE_SALES_NAV') {
+      saveLinkedInToSalesNavigator()
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
     if (msg.type === 'EXECUTE_CONTACT_REQUEST') {
       sendContactRequest(msg.payload)
         .then(result => sendResponse(result))
@@ -307,131 +325,432 @@
     return { success: false, error: 'Nicht unterstütztes Netzwerk.' };
   }
 
-  async function addLinkedInToRecruiterProject(projectName, projectUrl) {
-    try {
-      // Recruiter exposes this action as "Save to project" on candidate profiles.
-      const saveToProject = await findVisibleBySelectorsOrText([
-        'button[aria-label*="Save to project" i]',
-        'button[aria-label*="Projekt" i]',
-        '[data-test*="save-to-project" i]',
-        '[data-control-name*="save_to_project" i]'
-      ], /save to project|in projekt speichern|zu projekt speichern|projekt speichern/i, 15000, 'button, [role="button"], a');
+  function networkUiText(el) {
+    return normalizeUiText(
+      (el?.innerText || el?.textContent || '') + ' ' +
+      (el?.getAttribute?.('aria-label') || '') + ' ' +
+      (el?.getAttribute?.('title') || '')
+    );
+  }
 
-      if (!saveToProject) {
-        const recruiterHint = findVisibleElement('a[href*="/talent/"], a[href*="/recruiter/"], button');
-        const hintText = normalizeUiText(recruiterHint?.textContent || '');
-        if (/recruiter/.test(hintText)) {
-          throw new Error('Das Profil ist geöffnet, aber „Save to project“ ist hier nicht verfügbar. Bitte das Kandidatenprofil in LinkedIn Recruiter öffnen.');
-        }
-        throw new Error('LinkedIn Recruiter: „Save to project“ wurde auf diesem Kandidatenprofil nicht gefunden.');
-      }
-      saveToProject.click();
-      await sleep(1000);
+  function networkRealClick(el) {
+    if (!el) return;
+    try { el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse' })); } catch (_) {}
+    try { el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window })); } catch (_) {}
+    try { el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window })); } catch (_) {}
+    try { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); } catch (_) {}
+    try { HTMLElement.prototype.click.call(el); } catch (_) { try { el.click(); } catch (_) {} }
+  }
 
-      const existingChoice = await findVisibleBySelectorsOrText([], /choose existing project|bestehendes projekt|vorhandenes projekt/i, 3000, 'button, [role="button"], label');
-      if (existingChoice) {
-        existingChoice.click();
-        await sleep(700);
-      }
-
-      const scope = await waitForProjectScope(10000);
-      if (!scope) throw new Error('LinkedIn Recruiter: Projektauswahl wurde nicht geöffnet.');
-
-      const searchInput = findVisibleWithin(scope, [
-        'input[placeholder*="project" i]',
-        'input[placeholder*="Projekt" i]',
-        'input[aria-label*="project" i]',
-        'input[aria-label*="Projekt" i]',
-        'input[type="search"]',
-        'input[type="text"]'
-      ]);
-      if (searchInput) {
-        setNativeInputValue(searchInput, projectName);
-        await sleep(900);
-      }
-
-      const option = await findProjectOption(scope, projectName, projectUrl, 8000);
-      if (!option) throw new Error(`LinkedIn Recruiter: Projekt „${projectName}“ wurde nicht eindeutig gefunden.`);
-      if (!isSelectedProjectOption(option)) {
-        clickableProjectElement(option).click();
-        await sleep(600);
-      }
-
-      const confirm = await findVisibleBySelectorsOrText([
-        '[role="dialog"] button[type="submit"]',
-        '[role="dialog"] button.artdeco-button--primary',
-        'button[data-test*="save" i]'
-      ], /^save$|^speichern$|^sichern$|^fertig$|^done$/i, 7000, 'button, [role="button"]', scope);
-      if (!confirm || confirm.disabled || confirm.getAttribute('aria-disabled') === 'true') {
-        throw new Error('LinkedIn Recruiter: Bestätigungsbutton zum Speichern wurde nicht gefunden.');
-      }
-      confirm.click();
-      await sleep(1200);
-      return { success: true, projectName };
-    } catch (error) {
-      return { success: false, error: error.message || 'LinkedIn-Recruiter-Zuordnung fehlgeschlagen.' };
+  async function networkWaitFor(factory, timeout = 8000, delay = 180) {
+    const end = Date.now() + timeout;
+    while (Date.now() < end) {
+      const hit = factory();
+      if (hit) return hit;
+      await sleep(delay);
     }
+    return null;
+  }
+
+  function networkFindVisibleByText(pattern, root = document) {
+    const selectors = 'button,a,[role="button"],[role="menuitem"],[role="option"],li,div,span';
+    const nodes = Array.from(root.querySelectorAll(selectors)).filter(isVisible);
+    const exact = nodes.filter(el => pattern.test(networkUiText(el))).sort((a, b) => networkUiText(a).length - networkUiText(b).length);
+    for (const el of exact) {
+      const clickable = el.matches('button,a,[role="button"],[role="menuitem"],[role="option"]')
+        ? el
+        : el.closest('button,a,[role="button"],[role="menuitem"],[role="option"]')
+          || el.querySelector('button,a,[role="button"],[role="menuitem"],[role="option"]');
+      if (clickable && isVisible(clickable)) return clickable;
+    }
+    return null;
+  }
+
+  async function networkWaitVisibleText(pattern, timeout = 8000) {
+    return networkWaitFor(() => networkFindVisibleByText(pattern), timeout, 180);
+  }
+
+  function networkCandidateName() {
+    if (detectPlatform() === 'linkedin') {
+      const selectors = ['h1', '.text-heading-xlarge', 'main h1', '[data-anonymize="person-name"]'];
+      for (const selector of selectors) {
+        const el = Array.from(document.querySelectorAll(selector)).find(isVisible);
+        const text = normalizeUiText(el?.innerText || el?.textContent || '');
+        if (text && text.length < 140) return text.replace(/\s*[·•]\s*\d+\.?\s*$/, '').trim();
+      }
+      return String(document.title || '').replace(/\s*\|\s*LinkedIn.*$/i, '').trim() || 'LinkedIn-Kandidat';
+    }
+
+    const candidates = [];
+    const push = el => {
+      if (!el || !isVisible(el)) return;
+      const text = normalizeUiText(el.innerText || el.textContent || '');
+      if (text && text.length >= 2 && text.length <= 120) candidates.push(text);
+    };
+    Array.from(document.querySelectorAll('h1,h2,[data-testid*="profile"] h1,[data-testid*="profile"] h2')).forEach(push);
+    const contact = xingContactButton();
+    if (contact) {
+      const cr = contact.getBoundingClientRect();
+      Array.from(document.querySelectorAll('h1,h2,h3,strong,b'))
+        .filter(isVisible)
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.top < cr.bottom + 120 && r.bottom > cr.top - 260 && r.left < cr.left;
+        })
+        .forEach(push);
+    }
+    const bad = /^(xing|profildetails|berufserfahrung|ausbildung|notizen|zu projekt hinzufügen|kandidat:innen-status)$/i;
+    return candidates.find(text => !bad.test(text) && /[A-Za-zÄÖÜäöüß].+\s+[A-Za-zÄÖÜäöüß]/.test(text))
+      || String(document.title || '').replace(/\s*\|\s*XING.*$/i, '').trim()
+      || 'Unbekannter Kandidat';
+  }
+
+  function xingContactButton() {
+    const candidates = Array.from(document.querySelectorAll('button,a,[role="button"]')).filter(isVisible);
+    return candidates.find(el => /^\s*als\s+kontakt\s+hinzufügen\s*$/i.test(networkUiText(el)))
+      || candidates.find(el => /als\s+kontakt\s+hinzufügen/i.test(networkUiText(el)))
+      || null;
+  }
+
+  function xingProfileMoreButton() {
+    const contact = xingContactButton();
+    if (!contact) return null;
+    const cr = contact.getBoundingClientRect();
+    const cy = cr.top + cr.height / 2;
+    const candidates = Array.from(document.querySelectorAll('button,[role="button"],[aria-haspopup="menu"],[tabindex="0"]'))
+      .filter(el => isVisible(el) && el !== contact)
+      .map(el => ({ el, r: el.getBoundingClientRect(), label: networkUiText(el) }))
+      .filter(x => Math.abs((x.r.top + x.r.height / 2) - cy) <= 38
+        && x.r.left >= cr.right - 8
+        && x.r.left <= cr.right + 130
+        && x.r.width <= 90
+        && x.r.height <= 90)
+      .sort((a, b) => Math.abs(a.r.left - cr.right) - Math.abs(b.r.left - cr.right));
+    let hit = candidates.find(x => x.el.getAttribute('aria-haspopup') === 'menu');
+    if (hit) return hit.el;
+    hit = candidates.find(x => /mehr|weitere|option|aktion|ellipsis|menü|menu/i.test(x.label)
+      || /ellipsis|more/i.test((x.el.innerHTML || '').toLowerCase())
+      || ['…', '...'].includes(normalizeUiText(x.el.innerText)));
+    return hit?.el || candidates[0]?.el || null;
+  }
+
+  async function xingTalentManagerMenuItem(timeout = 3500) {
+    const end = Date.now() + timeout;
+    while (Date.now() < end) {
+      const menus = Array.from(document.querySelectorAll('[role="menu"],[role="listbox"],[data-popper-placement],ul')).filter(isVisible);
+      const roots = menus.length ? menus : [document];
+      for (const root of roots) {
+        const nodes = Array.from(root.querySelectorAll('button,a,[role="menuitem"],[role="option"],li,div,span')).filter(isVisible);
+        for (const el of nodes) {
+          if (!/^\s*im\s+talent\s*manager\s+ansehen\s*$/i.test(networkUiText(el))
+            && !/im\s+talent\s*manager\s+ansehen/i.test(networkUiText(el))) continue;
+          const clickable = el.matches('button,a,[role="menuitem"],[role="option"],[role="button"]')
+            ? el
+            : el.closest('button,a,[role="menuitem"],[role="option"],[role="button"]')
+              || el.querySelector('button,a,[role="menuitem"],[role="option"],[role="button"]');
+          if (clickable && isVisible(clickable)) return clickable;
+        }
+      }
+      await sleep(150);
+    }
+    return null;
+  }
+
+  async function openXingTalentManagerStage() {
+    if (detectPlatform() !== 'xing') return { success: false, error: 'Kein XING-Tab.' };
+    const candidateName = networkCandidateName();
+    const isTalentManagerUrl = /\/xtm(?:\/|\?|$)/i.test(location.pathname + location.search)
+      || /\/talent-?manager(?:\/|\?|$)/i.test(location.pathname + location.search)
+      || /talentmanager/i.test(location.hostname);
+    if (isTalentManagerUrl) {
+      return { success: true, navigating: false, beforeUrl: location.href, alreadyTalentManager: true, candidateName };
+    }
+
+    const contact = xingContactButton();
+    if (!contact) {
+      return { success: false, error: '„Als Kontakt hinzufügen“ nicht gefunden – vermutlich kein passendes XING-Kandidatenprofil.', candidateName };
+    }
+
+    const more = xingProfileMoreButton();
+    if (!more) return { success: false, error: 'Drei-Punkte-Menü neben „Als Kontakt hinzufügen“ nicht gefunden.', candidateName };
+    try { more.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) {}
+    await sleep(120);
+    networkRealClick(more);
+
+    const button = await xingTalentManagerMenuItem(4200);
+    if (!button) return { success: false, error: '„Im TalentManager ansehen“ im Drei-Punkte-Menü nicht gefunden.', candidateName };
+
+    const beforeUrl = location.href;
+    const href = button.tagName === 'A' ? (button.href || button.getAttribute('href') || '') : '';
+    if (button.tagName === 'A') button.setAttribute('target', '_self');
+    try { button.scrollIntoView({ block: 'nearest', behavior: 'instant' }); } catch (_) {}
+    await sleep(120);
+    networkRealClick(button);
+    return { success: true, navigating: true, beforeUrl, href, candidateName };
+  }
+
+  async function chooseXingProject(project) {
+    project = normalizeUiText(project);
+    const candidateName = networkCandidateName();
+    if (!project) return { success: true, detail: '„Zu Projekt hinzufügen“ geöffnet; kein Zielprojekt vorgegeben.', candidateName };
+
+    const canon = value => normalizeUiText(value).toLowerCase()
+      .replace(/[()]/g, ' ')
+      .replace(/[^a-z0-9äöüß]+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const wanted = canon(project);
+    const sameProject = value => {
+      const current = canon(value);
+      return Boolean(current) && (current === wanted || current.includes(wanted) || wanted.includes(current));
+    };
+
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],dialog'))
+      .filter(isVisible)
+      .filter(el => /zu\s+projekt\s+hinzufügen/i.test(networkUiText(el)));
+    let modal = dialogs[0] || null;
+    if (!modal) {
+      const candidates = Array.from(document.querySelectorAll('section,div'))
+        .filter(isVisible)
+        .filter(el => /zu\s+projekt\s+hinzufügen/i.test(networkUiText(el)))
+        .filter(el => {
+          const r = el.getBoundingClientRect();
+          return r.width > 420 && r.height > 250 && r.width < window.innerWidth * .9 && r.height < window.innerHeight * .95;
+        });
+      candidates.sort((a, b) => {
+        const ar = a.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
+        return (br.width * br.height) - (ar.width * ar.height);
+      });
+      modal = candidates[0] || document;
+    }
+
+    const visibleInputs = Array.from(modal.querySelectorAll('input')).filter(isVisible);
+    const projectField = visibleInputs.find(input => sameProject(input.value || ''))
+      || visibleInputs.find(input => /projekt|project|suchen|search/i.test((input.placeholder || '') + ' ' + (input.getAttribute('aria-label') || '')))
+      || visibleInputs.find(input => normalizeUiText(input.value || '').length > 0)
+      || null;
+
+    let alreadySelected = Boolean(projectField && sameProject(projectField.value || ''));
+
+    if (!alreadySelected) {
+      const selectedNodes = Array.from(modal.querySelectorAll('[aria-selected="true"],[aria-checked="true"],button,[role="button"],li,div'))
+        .filter(isVisible)
+        .filter(el => sameProject(networkUiText(el)));
+      const selected = selectedNodes.find(el => el.getAttribute('aria-selected') === 'true'
+        || el.getAttribute('aria-checked') === 'true'
+        || /selected|active|checked/i.test(String(el.className || '')));
+      if (selected) alreadySelected = true;
+    }
+
+    if (!alreadySelected) {
+      const exactNodes = Array.from(modal.querySelectorAll('button,[role="button"],[role="option"],li,a,div'))
+        .filter(isVisible)
+        .filter(el => sameProject(networkUiText(el)));
+      let option = exactNodes.find(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 90 && r.height > 30 && r.width < 500 && r.height < 180;
+      }) || null;
+
+      if (option) {
+        const clickTarget = option.matches('button,a,[role="button"],[role="option"]')
+          ? option
+          : option.querySelector('button,a,[role="button"],[role="option"]') || option;
+        networkRealClick(clickTarget);
+        await sleep(650);
+      } else if (projectField) {
+        try { projectField.focus({ preventScroll: true }); } catch (_) {}
+        networkRealClick(projectField);
+        setNativeInputValue(projectField, project);
+        await sleep(800);
+        const options = Array.from(document.querySelectorAll('[role="option"],button,[role="button"],li,a,div'))
+          .filter(isVisible)
+          .filter(el => sameProject(networkUiText(el)));
+        option = options.find(el => {
+          const r = el.getBoundingClientRect();
+          return r.width > 90 && r.height > 24 && r.width < 700 && r.height < 160;
+        }) || null;
+        if (option) {
+          const clickTarget = option.matches('button,a,[role="button"],[role="option"]')
+            ? option
+            : option.querySelector('button,a,[role="button"],[role="option"]') || option;
+          networkRealClick(clickTarget);
+          await sleep(700);
+        }
+      }
+
+      const afterInputs = Array.from(modal.querySelectorAll('input')).filter(isVisible);
+      const nowSelected = afterInputs.some(input => sameProject(input.value || ''))
+        || Array.from(modal.querySelectorAll('[aria-selected="true"],[aria-checked="true"]'))
+          .filter(isVisible)
+          .some(el => sameProject(networkUiText(el)));
+      if (!nowSelected) return { success: false, error: `Projekt „${project}“ ist nicht ausgewählt.`, candidateName };
+    }
+
+    const confirmPattern = /^\s*\+?\s*zu\s+projekt\s+hinzufügen\s*$/i;
+    const findConfirm = () => {
+      const roots = modal === document ? [document] : [modal, document];
+      const found = [];
+      for (const root of roots) {
+        for (const el of root.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"],a')) {
+          if (!isVisible(el)) continue;
+          const text = normalizeUiText((el.innerText || el.textContent || el.value || '').replace(/^\+\s*/, ''));
+          if (confirmPattern.test(text) || /^zu\s+projekt\s+hinzufügen$/i.test(text)) found.push(el);
+        }
+        if (found.length) break;
+      }
+      found.sort((a, b) => {
+        const ar = a.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
+        return (br.bottom + br.right) - (ar.bottom + ar.right);
+      });
+      return found[0] || null;
+    };
+
+    let confirm = await networkWaitFor(findConfirm, 3500, 100);
+    if (!confirm) return { success: false, error: 'Bestätigungsbutton „Zu Projekt hinzufügen“ nicht gefunden.', candidateName };
+    if (confirm.disabled || confirm.getAttribute('aria-disabled') === 'true') {
+      return { success: false, error: '„Zu Projekt hinzufügen“ ist deaktiviert.', candidateName };
+    }
+
+    const dialogStillOpen = () => {
+      const openDialogs = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],dialog')).filter(isVisible);
+      if (openDialogs.some(el => /zu\s+projekt\s+hinzufügen/i.test(networkUiText(el)))) return true;
+      return Array.from(document.querySelectorAll('button,[role="button"]')).filter(isVisible).some(el => {
+        const text = normalizeUiText((el.innerText || el.textContent || '').replace(/^\+\s*/, ''));
+        return /^zu\s+projekt\s+hinzufügen$/i.test(text);
+      });
+    };
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      confirm = findConfirm() || confirm;
+      try { confirm.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch (_) {}
+      try { confirm.focus({ preventScroll: true }); } catch (_) {}
+      await sleep(120);
+
+      if (attempt === 0) {
+        try { HTMLElement.prototype.click.call(confirm); } catch (_) { try { confirm.click(); } catch (_) {} }
+      } else if (attempt === 1) {
+        networkRealClick(confirm);
+      } else if (attempt === 2) {
+        const r = confirm.getBoundingClientRect();
+        const physical = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+        const target = physical?.closest?.('button,[role="button"]') || physical;
+        if (target) {
+          try { HTMLElement.prototype.click.call(target); } catch (_) { try { target.click(); } catch (_) {} }
+          networkRealClick(target);
+        }
+      } else if (attempt === 3) {
+        try {
+          confirm.focus({ preventScroll: true });
+          confirm.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+          confirm.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+        } catch (_) {}
+      } else {
+        try {
+          confirm.focus({ preventScroll: true });
+          confirm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+          confirm.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+        } catch (_) {}
+      }
+
+      const endTime = Date.now() + 2200;
+      while (Date.now() < endTime) {
+        await sleep(120);
+        if (!dialogStillOpen()) {
+          await sleep(400);
+          return { success: true, detail: `Projekt „${project}“ hinzugefügt.`, candidateName };
+        }
+      }
+    }
+
+    return { success: false, error: 'Der grüne Button „Zu Projekt hinzufügen“ wurde gefunden, aber der Dialog blieb geöffnet.', candidateName };
+  }
+
+  async function addXingTalentManagerProject(projectName, projectUrl) {
+    const candidateName = networkCandidateName();
+    if (detectPlatform() !== 'xing') return { success: false, error: 'Kein XING-Tab.', candidateName };
+    const add = await networkWaitVisibleText(/^\s*zu(?:m|\s+einem)\s+projekt\s+hinzufügen\s*$/i, 7000)
+      || await networkWaitVisibleText(/zu(?:m|\s+einem)\s+projekt\s+hinzufügen/i, 1500)
+      || await networkWaitVisibleText(/^\s*projekt\s+hinzufügen\s*$/i, 800);
+    if (!add) {
+      if (/bereits.*projekt|im projekt|zu projekt hinzugefügt/i.test(document.body.innerText || '')) {
+        return { success: true, detail: 'Bereits in einem Projekt.', candidateName };
+      }
+      return { success: false, error: '„Zu einem Projekt hinzufügen“ nicht gefunden.', candidateName };
+    }
+    try { add.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) {}
+    await sleep(120);
+    networkRealClick(add);
+    await sleep(650);
+    return chooseXingProject(projectName);
+  }
+
+  function findLinkedInSalesNavSave() {
+    const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],div[role="button"]')).filter(isVisible);
+    const exact = /^in\s+sales\s+navigator\s+speichern$/i;
+    let hit = nodes.find(el => exact.test(normalizeUiText(el.innerText || el.textContent || el.getAttribute('aria-label') || '')));
+    if (hit) return hit;
+    hit = nodes.find(el => /in\s+sales\s+navigator\s+speichern/i.test(normalizeUiText(
+      (el.innerText || el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')
+    )));
+    if (hit) return hit;
+    const textNode = Array.from(document.querySelectorAll('span,div'))
+      .filter(isVisible)
+      .find(el => exact.test(normalizeUiText(el.innerText || el.textContent || '')));
+    return textNode?.closest('button,a,[role="button"]') || null;
+  }
+
+  function linkedInAlreadySaved() {
+    const body = normalizeUiText(document.body?.innerText || '');
+    return /in\s+sales\s+navigator\s+(?:öffnen|anzeigen|ansehen)/i.test(body)
+      || /(?:in\s+)?sales\s+navigator.*gespeichert/i.test(body);
+  }
+
+  async function saveLinkedInToSalesNavigator() {
+    const candidateName = networkCandidateName();
+    if (detectPlatform() !== 'linkedin' || !/\/in\//i.test(location.pathname || '')) {
+      return { success: false, error: 'Kein LinkedIn-Kandidatenprofil.', candidateName };
+    }
+    if (linkedInAlreadySaved() && !findLinkedInSalesNavSave()) {
+      return { success: true, detail: 'Bereits im Sales Navigator gespeichert.', candidateName };
+    }
+
+    const button = await networkWaitFor(findLinkedInSalesNavSave, 4500, 120);
+    if (!button) return { success: false, error: '„In Sales Navigator speichern“ nicht gefunden.', candidateName };
+    const before = normalizeUiText(button.innerText || button.textContent || button.getAttribute('aria-label') || '');
+    try { button.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch (_) {}
+    await sleep(120);
+    networkRealClick(button);
+
+    const endTime = Date.now() + 6500;
+    while (Date.now() < endTime) {
+      await sleep(180);
+      const current = findLinkedInSalesNavSave();
+      if (!current) return { success: true, detail: 'Im Sales Navigator gespeichert.', candidateName };
+      const currentText = normalizeUiText(current.innerText || current.textContent || current.getAttribute('aria-label') || '');
+      if (currentText && currentText !== before && !/speichern/i.test(currentText)) {
+        return { success: true, detail: currentText, candidateName };
+      }
+      if (linkedInAlreadySaved() && !/in\s+sales\s+navigator\s+speichern/i.test(normalizeUiText(document.body?.innerText || ''))) {
+        return { success: true, detail: 'Im Sales Navigator gespeichert.', candidateName };
+      }
+      const alerts = Array.from(document.querySelectorAll('[role="alert"],[aria-live="assertive"],[aria-live="polite"],.artdeco-toast-item')).filter(isVisible);
+      if (alerts.some(alert => /sales\s+navigator/i.test(normalizeUiText(alert.innerText || alert.textContent || ''))
+        && /gespeichert|saved|hinzugefügt/i.test(normalizeUiText(alert.innerText || alert.textContent || '')))) {
+        return { success: true, detail: 'Im Sales Navigator gespeichert.', candidateName };
+      }
+    }
+
+    return { success: false, error: 'Klick ausgeführt, aber Speichern wurde nicht bestätigt.', candidateName };
+  }
+
+  async function addLinkedInToRecruiterProject() {
+    return saveLinkedInToSalesNavigator();
   }
 
   async function addXingToTalentManagerProject(projectName, projectUrl) {
-    try {
-      const more = await findVisibleBySelectorsOrText([
-        'button[aria-label*="Mehr" i]',
-        'button[aria-label*="More" i]',
-        'button[aria-label*="Aktion" i]',
-        'button[data-qa*="more" i]',
-        '[data-qa*="actions"] button'
-      ], /^mehr$|^more$|aktionen|weitere aktionen/i, 12000, 'button, [role="button"]');
-      if (more) {
-        more.click();
-        await sleep(600);
-      }
-
-      const addAction = await findVisibleBySelectorsOrText([
-        '[data-qa*="add-to-project" i]',
-        'button[aria-label*="Projekt" i]'
-      ], /zu projekt hinzufügen|in projekt hinzufügen|add to project/i, 7000, 'button, [role="button"], a, li');
-      if (!addAction) throw new Error('XING TalentManager: „Zu Projekt hinzufügen“ wurde nicht gefunden.');
-      addAction.click();
-      await sleep(900);
-
-      const scope = await waitForProjectScope(10000);
-      if (!scope) throw new Error('XING TalentManager: Projektauswahl wurde nicht geöffnet.');
-
-      const searchInput = findVisibleWithin(scope, [
-        'input[placeholder*="Projekt" i]',
-        'input[placeholder*="project" i]',
-        'input[aria-label*="Projekt" i]',
-        'input[aria-label*="project" i]',
-        'input[type="search"]',
-        'input[type="text"]'
-      ]);
-      if (searchInput) {
-        setNativeInputValue(searchInput, projectName);
-        await sleep(900);
-      }
-
-      const option = await findProjectOption(scope, projectName, projectUrl, 8000);
-      if (!option) throw new Error(`XING TalentManager: Projekt „${projectName}“ wurde nicht eindeutig gefunden.`);
-      if (!isSelectedProjectOption(option)) {
-        clickableProjectElement(option).click();
-        await sleep(600);
-      }
-
-      const confirm = await findVisibleBySelectorsOrText([
-        '[role="dialog"] button[type="submit"]',
-        'button[data-qa*="add-to-project" i]',
-        'button[data-qa*="confirm" i]'
-      ], /^(zu projekt hinzufügen|in projekt hinzufügen|add to project|hinzufügen|add)$/i, 7000, 'button, [role="button"]', scope);
-      if (!confirm || confirm.disabled || confirm.getAttribute('aria-disabled') === 'true') {
-        throw new Error('XING TalentManager: Bestätigungsbutton zum Hinzufügen wurde nicht gefunden.');
-      }
-      confirm.click();
-      await sleep(1200);
-      return { success: true, projectName };
-    } catch (error) {
-      return { success: false, error: error.message || 'XING-TalentManager-Zuordnung fehlgeschlagen.' };
-    }
+    return addXingTalentManagerProject(projectName, projectUrl);
   }
 
   async function waitForProjectScope(timeout) {
