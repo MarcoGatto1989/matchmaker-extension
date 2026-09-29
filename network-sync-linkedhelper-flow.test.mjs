@@ -25,7 +25,9 @@ test('network sync closes successful tabs and preserves failed tabs', () => {
   assert.match(background, /await chrome\.tabs\.remove\(sourceTab\.id\)/);
   assert.match(background, /idsToClose/);
   assert.match(background, /Deliberately keep source\/target tabs open/);
-  assert.match(background, /completeJob\(job\.id, apiBase, token, 'failed', reason\)/);
+  assert.match(background, /networkSyncCompleteJob\(job\.id, apiBase, token, 'failed', reason\)/);
+  assert.match(background, /networkSyncSendWithRetry/);
+  assert.match(background, /networkSyncWaitForTabReady/);
 });
 
 test('extension release identifies Network Sync capability', () => {
@@ -38,7 +40,7 @@ test('extension release identifies Network Sync capability', () => {
 
 test('successful URL output is populated only after verified success', () => {
   assert.match(background, /const sourceProfileUrl = String\(profileUrl \|\| ''\)\.trim\(\)/);
-  assert.match(background, /await completeJob\(job\.id, apiBase, token, 'completed', null\);[\s\S]*await networkSyncRecordSuccessfulUrl/);
+  assert.match(background, /await networkSyncCompleteJob\(job\.id, apiBase, token, 'completed', null\);[\s\S]*await networkSyncRecordSuccessfulUrl/);
   assert.match(background, /NETWORK_SYNC_SUCCESS_STORAGE_KEY/);
 });
 
