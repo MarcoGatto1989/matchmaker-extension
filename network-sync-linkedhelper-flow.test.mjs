@@ -29,8 +29,24 @@ test('network sync closes successful tabs and preserves failed tabs', () => {
 });
 
 test('extension release identifies Network Sync capability', () => {
-  assert.equal(manifest.version, '4.0.21');
+  assert.equal(manifest.version, '4.0.22');
   assert.match(manifest.description, /Network Sync/);
   assert.match(manifest.description, /Sales Navigator/);
   assert.match(manifest.description, /TalentManager/);
+});
+
+
+test('successful URL output is populated only after verified success', () => {
+  assert.match(background, /const sourceProfileUrl = String\(profileUrl \|\| ''\)\.trim\(\)/);
+  assert.match(background, /await completeJob\(job\.id, apiBase, token, 'completed', null\);[\s\S]*await networkSyncRecordSuccessfulUrl/);
+  assert.match(background, /NETWORK_SYNC_SUCCESS_STORAGE_KEY/);
+});
+
+test('popup exposes the successful URL list with copy and clear actions', async () => {
+  const popupHtml = await readFile(new URL('./popup.html', import.meta.url), 'utf8');
+  const popupJs = await readFile(new URL('./popup.js', import.meta.url), 'utf8');
+  assert.match(popupHtml, /network-sync-success-urls/);
+  assert.match(popupHtml, /Liste kopieren/);
+  assert.match(popupJs, /navigator\.clipboard\.writeText/);
+  assert.match(popupJs, /loadNetworkSyncSuccessUrls/);
 });
