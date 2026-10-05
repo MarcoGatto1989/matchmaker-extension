@@ -525,22 +525,26 @@
       modal = candidates[0] || document;
     }
 
-    const assignedProjectNodes = Array.from(modal.querySelectorAll('button,[role="button"],[role="option"],li,div,span,label'))
-      .filter(isVisible)
-      .filter(el => sameProject(networkUiText(el)));
-    const alreadyAssignedTarget = assignedProjectNodes.find(el =>
-      /bereits\s+zugewiesen|bereits\s+im\s+projekt|already\s+assigned|already\s+in\s+project/i.test(networkUiText(el))
-      || el.getAttribute('aria-disabled') === 'true'
-      || el.hasAttribute('disabled')
-    );
-    if (alreadyAssignedTarget) {
-      return {
-        success: true,
-        alreadyAssigned: true,
-        detail: `Bereits im Projekt „${project}“.`,
-        candidateName,
-      };
-    }
+    const findAlreadyAssignedTarget = (root = modal) => {
+      const nodes = Array.from(root.querySelectorAll('button,[role="button"],[role="option"],li,div,span,label'))
+        .filter(isVisible)
+        .filter(el => sameProject(networkUiText(el)));
+      return nodes.find(el => {
+        const text = networkUiText(el);
+        return /bereits\s+zugewiesen|bereits\s+im\s+projekt|already\s+assigned|already\s+in\s+project/i.test(text)
+          || el.getAttribute('aria-disabled') === 'true'
+          || el.hasAttribute('disabled');
+      }) || null;
+    };
+
+    const alreadyAssignedResult = () => ({
+      success: true,
+      alreadyAssigned: true,
+      detail: `Bereits im Projekt „${project}“.`,
+      candidateName,
+    });
+
+    if (findAlreadyAssignedTarget()) return alreadyAssignedResult();
 
     const visibleInputs = Array.from(modal.querySelectorAll('input')).filter(isVisible);
     const projectField = visibleInputs.find(input => sameProject(input.value || ''))
@@ -580,6 +584,13 @@
         networkRealClick(projectField);
         setNativeInputValue(projectField, project);
         await sleep(800);
+
+        // XING marks the searched target as "bereits zugewiesen" and disables it.
+        // That means the candidate is already in the requested project; this is a
+        // successful existing match, not a technical error.
+        const assignedAfterSearch = findAlreadyAssignedTarget(document);
+        if (assignedAfterSearch) return alreadyAssignedResult();
+
         const options = Array.from(document.querySelectorAll('[role="option"],button,[role="button"],li,a,div'))
           .filter(isVisible)
           .filter(el => sameProject(networkUiText(el)));
@@ -595,6 +606,9 @@
           await sleep(700);
         }
       }
+
+      const assignedAfterSelection = findAlreadyAssignedTarget(document);
+      if (assignedAfterSelection) return alreadyAssignedResult();
 
       const afterInputs = Array.from(modal.querySelectorAll('input')).filter(isVisible);
       const nowSelected = afterInputs.some(input => sameProject(input.value || ''))
