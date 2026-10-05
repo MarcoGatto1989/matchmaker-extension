@@ -222,4 +222,45 @@
     });
     return true;
   });
+
+
+  // Optional field-highlighting from Settings.
+  let highlightedField = null;
+  let highlightEnabled = false;
+
+  function clearHighlightedField() {
+    if (highlightedField) {
+      highlightedField.style.removeProperty('outline');
+      highlightedField.style.removeProperty('outline-offset');
+      highlightedField.style.removeProperty('box-shadow');
+      highlightedField = null;
+    }
+  }
+
+  function updateHighlightedField(target) {
+    if (!highlightEnabled) return;
+    const field = target?.closest?.('input,textarea,select,[contenteditable="true"]');
+    if (field === highlightedField) return;
+    clearHighlightedField();
+    if (!field) return;
+    highlightedField = field;
+    field.style.setProperty('outline', '2px solid #22d3ee', 'important');
+    field.style.setProperty('outline-offset', '3px', 'important');
+    field.style.setProperty('box-shadow', '0 0 0 5px rgba(34,211,238,.12), 0 0 28px rgba(34,211,238,.28)', 'important');
+  }
+
+  function applyHighlightSetting(enabled) {
+    highlightEnabled = Boolean(enabled);
+    if (!highlightEnabled) clearHighlightedField();
+  }
+
+  document.addEventListener('mousemove', (event) => updateHighlightedField(event.target), true);
+  chrome.storage.local.get(['esos_hover_highlight_fields'], (stored) => {
+    applyHighlightSetting(stored.esos_hover_highlight_fields);
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.esos_hover_highlight_fields) {
+      applyHighlightSetting(changes.esos_hover_highlight_fields.newValue);
+    }
+  });
 })();
