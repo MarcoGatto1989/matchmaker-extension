@@ -33,3 +33,11 @@ test('failed profiles stay open and new profile data persists before close', () 
   assert.match(worker, /await persistNew\('linkedin'/);
   assert.match(worker, /if \(!result\?\.success\)[\s\S]*continue/);
 });
+
+
+test('XING TalentManager navigation self-heals missing content receiver and treats assigned targets as existing', () => {
+  assert.match(worker, /ensureContentBridge/);
+  assert.match(worker, /chrome\.scripting\.executeScript/);
+  assert.match(worker, /receiving end does not exist|could not establish connection/i);
+  assert.match(worker, /!result\?\.success && isAlready\(result\)/);
+});
