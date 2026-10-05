@@ -13,6 +13,9 @@ test('network sync uses the proven XING LinkedHelper flow', () => {
   assert.match(content, /projectField && sameProject/);
   assert.match(content, /for \(let attempt = 0; attempt < 5; attempt \+= 1\)/);
   assert.match(content, /dialogStillOpen/);
+  assert.match(content, /projectAssignmentConfirmed/);
+  assert.match(content, /currentConfirm\.disabled/);
+  assert.match(content, /closeProjectDialog/);
 });
 
 test('network sync saves LinkedIn candidates in Sales Navigator', () => {
@@ -31,7 +34,7 @@ test('network sync closes successful tabs and preserves failed tabs', () => {
 });
 
 test('extension release identifies Network Sync capability', () => {
-  assert.equal(manifest.version, '4.1.1');
+  assert.equal(manifest.version, '4.1.2');
   assert.match(manifest.description, /Network Sync/);
   assert.match(manifest.description, /Sales Navigator/);
   assert.match(manifest.description, /TalentManager/);

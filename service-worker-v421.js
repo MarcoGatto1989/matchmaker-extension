@@ -1,4 +1,4 @@
-// ESOS AI v4.1.1 — keep the proven ESOS worker chain and add persistent LinkedHelper batch orchestration.
+// ESOS AI v4.1.2 — keep the proven ESOS worker chain and add persistent LinkedHelper batch orchestration.
 importScripts('service-worker-v420.js');
 importScripts('linkedhelper-batch-worker-v421.js');
 
@@ -19,4 +19,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-console.log('[ESOS AI] v4.1.1 active: persistent LinkedHelper panel + background tab processing.');
+console.log('[ESOS AI] v4.1.2 active: persistent LinkedHelper panel + background tab processing.');
