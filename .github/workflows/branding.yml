@@ -17,3 +17,16 @@ jobs:
         with:
           node-version: '24'
       - run: node --test branding.test.mjs domain-routing.test.mjs extension-token-selfheal.test.mjs queue-response-guard.test.mjs linkedin-position-background.test.mjs network-sync-linkedhelper-flow.test.mjs unified-extension-v410.contract.test.mjs
+
+      - name: Build installable extension ZIP
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          rm -f ESOS_AI_Unified_4.1.zip
+          zip -r ESOS_AI_Unified_4.1.zip .             -x '.git/*' '.github/*' '*.test.mjs' 'ESOS_AI_Unified_4.1.zip'
+      - name: Upload installable extension ZIP
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESOS_AI_Unified_4.1
+          path: ESOS_AI_Unified_4.1.zip
+          if-no-files-found: error
