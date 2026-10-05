@@ -945,3 +945,238 @@ loadNetworkSyncSuccessUrls().catch(() => {});
 
   refreshPlatform();
 })();
+
+
+// ESOS_LINKEDHELPER_BATCH_V421
+(() => {
+  const xingProjectInput = document.getElementById('network-xing-project');
+  const runXingBtn = document.getElementById('network-run-xing');
+  const runLinkedInBtn = document.getElementById('network-run-linkedin');
+  const statusEl = document.getElementById('network-run-status');
+  const newCountEl = document.getElementById('network-new-count');
+  const existingCountEl = document.getElementById('network-existing-count');
+  const errorCountEl = document.getElementById('network-error-count');
+  if (!runXingBtn || !runLinkedInBtn) return;
+
+  const SUCCESS_KEY = 'esos_network_sync_success_urls_v1';
+  const META_KEY = 'esos_socialfinder_profile_metadata_v421';
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const canonical = (url, network) => {
+    try {
+      const parsed = new URL(String(url || ''));
+      parsed.hash = '';
+      parsed.search = '';
+      parsed.hostname = parsed.hostname.replace(/^www\./, '').toLowerCase();
+      if (network === 'linkedin') {
+        const match = parsed.pathname.match(/^\/in\/([^/]+)/i);
+        return match ? 'linkedin:' + match[1].toLowerCase() : '';
+      }
+      const match = parsed.pathname.match(/^\/profile\/([^/]+)/i);
+      return match ? 'xing:' + match[1].toLowerCase() : '';
+    } catch (_) {
+      return '';
+    }
+  };
+
+  function sendTab(tabId, message) {
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message || 'Tab nicht erreichbar.' });
+          return;
+        }
+        resolve(response || { success: false, error: 'Keine Antwort vom Profil-Tab.' });
+      });
+    });
+  }
+
+  function getTab(tabId) {
+    return new Promise((resolve) => chrome.tabs.get(tabId, (tab) => resolve(chrome.runtime.lastError ? null : tab)));
+  }
+
+  async function waitReady(tabId, timeout) {
+    const end = Date.now() + (timeout || 18000);
+    let stableUrl = '';
+    let stableAt = 0;
+    while (Date.now() < end) {
+      const tab = await getTab(tabId);
+      if (!tab) return false;
+      const url = String(tab.url || '');
+      if (url !== stableUrl) { stableUrl = url; stableAt = Date.now(); }
+      if (tab.status === 'complete' && Date.now() - stableAt > 450) return true;
+      await delay(220);
+    }
+    return false;
+  }
+
+  function queryTabs(patterns) {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ currentWindow: true, url: patterns }, (tabs) => resolve(tabs || []));
+    });
+  }
+
+  async function scrapeProfile(tabId) {
+    const result = await sendTab(tabId, { type: 'SCRAPE_PROFILE' });
+    return result && result.success ? (result.data || {}) : {};
+  }
+
+  async function saveNewSuccess(network, url, candidateName, profileData) {
+    const stored = await chrome.storage.local.get([SUCCESS_KEY, META_KEY]);
+    const existing = Array.isArray(stored[SUCCESS_KEY]) ? stored[SUCCESS_KEY] : [];
+    const wanted = canonical(url, network) || String(url || '').trim().toLowerCase();
+    const filtered = existing.filter((entry) => {
+      const entryNetwork = String(entry && entry.network || '');
+      const key = canonical(entry && entry.url, entryNetwork) || String(entry && entry.url || '').trim().toLowerCase();
+      return key !== wanted;
+    });
+    filtered.push({
+      network: network,
+      url: url,
+      candidateName: String(candidateName || '').trim() || null,
+      succeededAt: new Date().toISOString(),
+    });
+
+    const metadata = stored[META_KEY] && typeof stored[META_KEY] === 'object' ? stored[META_KEY] : {};
+    const urlKey = String(url || '').trim().replace(/\/+$/, '').toLowerCase();
+    metadata[urlKey] = {
+      url: url,
+      network: network,
+      currentPosition: profileData && profileData.currentPosition || '',
+      currentCompany: profileData && profileData.currentCompany || '',
+      city: profileData && (profileData.companyCity || profileData.locationFull) || '',
+      gender: profileData && profileData.gender || '',
+      positionStartedAt: profileData && (profileData.positionStartedAt || profileData.currentPositionStartedAt) || '',
+      observedAt: new Date().toISOString(),
+      source: 'esos_ai_unified_v421',
+    };
+    const update = {};
+    update[SUCCESS_KEY] = filtered.slice(-1000);
+    update[META_KEY] = metadata;
+    await chrome.storage.local.set(update);
+  }
+
+  function updateCounters(stats) {
+    if (newCountEl) newCountEl.textContent = String(stats.added);
+    if (existingCountEl) existingCountEl.textContent = String(stats.existing);
+    if (errorCountEl) errorCountEl.textContent = String(stats.errors);
+  }
+
+  function isAlready(result) {
+    const detail = String(result && result.detail || '');
+    return Boolean(result && result.alreadyAssigned)
+      || (/\b(bereits|already|gespeichert)\b/i.test(detail) && !/\bhinzugefügt|added\b/i.test(detail));
+  }
+
+  async function closeTab(tabId) {
+    return new Promise((resolve) => chrome.tabs.remove(tabId, () => resolve()));
+  }
+
+  async function runXing() {
+    const project = String(xingProjectInput && xingProjectInput.value || '').trim();
+    if (!project) {
+      if (statusEl) statusEl.textContent = 'Bitte zuerst das XING-Zielprojekt eingeben.';
+      return;
+    }
+    await chrome.storage.local.set({ esos_linkedhelper_xing_project: project });
+    const tabs = (await queryTabs(['https://xing.com/*','https://www.xing.com/*','https://*.xing.com/*']))
+      .filter((tab) => /\/profile\//i.test(String(tab.url || '')));
+    if (!tabs.length) {
+      if (statusEl) statusEl.textContent = 'Keine geöffneten XING-Kandidatenprofile gefunden.';
+      return;
+    }
+
+    const stats = { added: 0, existing: 0, errors: 0 };
+    updateCounters(stats);
+    runXingBtn.disabled = true;
+    if (statusEl) statusEl.textContent = tabs.length + ' XING-Profile werden verarbeitet …';
+
+    for (let index = 0; index < tabs.length; index += 1) {
+      const tab = tabs[index];
+      const sourceUrl = String(tab.url || '');
+      if (statusEl) statusEl.textContent = 'XING ' + (index + 1) + '/' + tabs.length + ': Profil wird geprüft …';
+
+      const profileData = await scrapeProfile(tab.id);
+      const opened = await sendTab(tab.id, { type: 'ESOS_XING_OPEN_TALENT_MANAGER' });
+      if (!opened || !opened.success) {
+        stats.errors += 1; updateCounters(stats);
+        continue;
+      }
+
+      if (opened.navigating) {
+        await waitReady(tab.id, 18000);
+        await delay(450);
+      }
+      const added = await sendTab(tab.id, {
+        type: 'ESOS_XING_ADD_PROJECT',
+        payload: { project_name: project, project_url: '' },
+      });
+
+      if (!added || !added.success) {
+        stats.errors += 1; updateCounters(stats);
+        continue;
+      }
+
+      if (isAlready(added)) {
+        stats.existing += 1;
+      } else {
+        stats.added += 1;
+        await saveNewSuccess('xing', sourceUrl, added.candidateName || opened.candidateName, profileData);
+      }
+      updateCounters(stats);
+      await closeTab(tab.id);
+      await delay(180);
+    }
+
+    runXingBtn.disabled = false;
+    if (statusEl) statusEl.textContent = 'Fertig: ' + stats.added + ' neu · ' + stats.existing + ' bereits im Projekt · ' + stats.errors + ' Fehler. Fehler-Tabs bleiben offen.';
+  }
+
+  async function runLinkedIn() {
+    const tabs = (await queryTabs(['https://linkedin.com/*','https://www.linkedin.com/*','https://*.linkedin.com/*']))
+      .filter((tab) => /\/in\//i.test(String(tab.url || '')));
+    if (!tabs.length) {
+      if (statusEl) statusEl.textContent = 'Keine geöffneten LinkedIn-Kandidatenprofile gefunden.';
+      return;
+    }
+
+    const stats = { added: 0, existing: 0, errors: 0 };
+    updateCounters(stats);
+    runLinkedInBtn.disabled = true;
+    if (statusEl) statusEl.textContent = tabs.length + ' LinkedIn-Profile werden verarbeitet …';
+
+    for (let index = 0; index < tabs.length; index += 1) {
+      const tab = tabs[index];
+      const sourceUrl = String(tab.url || '');
+      if (statusEl) statusEl.textContent = 'LinkedIn ' + (index + 1) + '/' + tabs.length + ': Profil wird geprüft …';
+
+      const profileData = await scrapeProfile(tab.id);
+      const result = await sendTab(tab.id, { type: 'ESOS_LINKEDIN_SAVE_SALES_NAV' });
+
+      if (!result || !result.success) {
+        stats.errors += 1; updateCounters(stats);
+        continue;
+      }
+
+      if (isAlready(result)) {
+        stats.existing += 1;
+      } else {
+        stats.added += 1;
+        await saveNewSuccess('linkedin', sourceUrl, result.candidateName, profileData);
+      }
+      updateCounters(stats);
+      await closeTab(tab.id);
+      await delay(180);
+    }
+
+    runLinkedInBtn.disabled = false;
+    if (statusEl) statusEl.textContent = 'Fertig: ' + stats.added + ' neu · ' + stats.existing + ' bereits gespeichert · ' + stats.errors + ' Fehler. Fehler-Tabs bleiben offen.';
+  }
+
+  runXingBtn.addEventListener('click', runXing);
+  runLinkedInBtn.addEventListener('click', runLinkedIn);
+
+  chrome.storage.local.get(['esos_linkedhelper_xing_project'], (stored) => {
+    if (xingProjectInput) xingProjectInput.value = stored.esos_linkedhelper_xing_project || '';
+  });
+})();
