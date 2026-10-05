@@ -37,7 +37,8 @@ test('LinkedHelper batch sync distinguishes new, existing and errors', () => {
   assert.match(popupJs, /ESOS_XING_OPEN_TALENT_MANAGER/);
   assert.match(popupJs, /ESOS_XING_ADD_PROJECT/);
   assert.match(popupJs, /ESOS_LINKEDIN_SAVE_SALES_NAV/);
-  assert.match(content, /alreadyAssignedTarget/);
+  assert.match(content, /findAlreadyAssignedTarget/);
+  assert.match(content, /alreadyAssignedResult/);
 });
 
 test('new verified profiles are handed to SocialFinder with profile metadata', () => {
