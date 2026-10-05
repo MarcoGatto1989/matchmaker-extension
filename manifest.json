@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ESOS AI",
-  "version": "4.0.22",
-  "description": "ESOS AI Browser Extension für LinkedIn/XING Profil-Import, Network Sync (Sales Navigator/TalentManager), Positionsabgleich, Outreach und Social Publishing.",
+  "version": "4.1.0",
+  "description": "ESOS AI Unified: CRM-Import, Outreach, LinkedIn/XING Network Sync, Positionsabgleich, Profilanreicherung, Social Publishing und manueller LinkedIn/XING Helper in einer Extension.",
   "permissions": [
     "storage",
     "activeTab",
@@ -49,7 +49,8 @@
         "position-profile-parser.js",
         "linkedin-position-background-v420.js",
         "linkedin-profile-identity-v411.js",
-        "content.js"
+        "content.js",
+        "manual-outreach-v421.js"
       ]
     },
     {
@@ -64,7 +65,8 @@
         "social-photo-content-fastpath-v406.js",
         "social-photo-content-bridge.js",
         "profile-identity-v407.js",
-        "content.js"
+        "content.js",
+        "manual-outreach-v421.js"
       ]
     }
   ],
