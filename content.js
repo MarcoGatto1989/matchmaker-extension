@@ -639,6 +639,33 @@
       });
     };
 
+    const projectAssignmentConfirmed = () => {
+      // XING often keeps the modal open even after a successful assignment. In that
+      // state the green confirmation button becomes disabled and/or XING renders
+      // an "already assigned" marker. Both are stronger success signals than modal close.
+      const assignedMarker = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],dialog,body'))
+        .filter(Boolean)
+        .some(root => {
+          const text = networkUiText(root);
+          return sameProject(text)
+            && /bereits\s+zugewiesen|bereits\s+im\s+projekt|already\s+assigned|already\s+in\s+project/i.test(text);
+        });
+      if (assignedMarker) return true;
+
+      const currentConfirm = findConfirm();
+      if (currentConfirm && (currentConfirm.disabled || currentConfirm.getAttribute('aria-disabled') === 'true')) {
+        return true;
+      }
+
+      const alerts = Array.from(document.querySelectorAll('[role="alert"],[aria-live="assertive"],[aria-live="polite"],[data-testid*="toast"],[class*="toast"]'))
+        .filter(isVisible);
+      return alerts.some(alert => {
+        const text = networkUiText(alert);
+        return /hinzugefügt|zugewiesen|added|assigned/i.test(text)
+          && (sameProject(text) || !/fehler|error|fehlgeschlagen|failed/i.test(text));
+      });
+    };
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       confirm = findConfirm() || confirm;
       try { confirm.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch (_) {}
@@ -671,17 +698,21 @@
         } catch (_) {}
       }
 
-      const endTime = Date.now() + 2200;
+      const endTime = Date.now() + 2600;
       while (Date.now() < endTime) {
         await sleep(120);
+        if (projectAssignmentConfirmed()) {
+          await sleep(300);
+          return { success: true, detail: `Projekt „${project}“ hinzugefügt.`, candidateName };
+        }
         if (!dialogStillOpen()) {
-          await sleep(400);
+          await sleep(300);
           return { success: true, detail: `Projekt „${project}“ hinzugefügt.`, candidateName };
         }
       }
     }
 
-    return { success: false, error: 'Der grüne Button „Zu Projekt hinzufügen“ wurde gefunden, aber der Dialog blieb geöffnet.', candidateName };
+    return { success: false, error: '„Zu Projekt hinzufügen“ wurde ausgelöst, aber XING hat die Zuweisung nicht bestätigt.', candidateName };
   }
 
   async function addXingTalentManagerProject(projectName, projectUrl) {
