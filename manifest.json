@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ESOS AI",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "description": "ESOS AI Unified: CRM-Import, Outreach, Network Sync mit LinkedIn Sales Navigator und XING TalentManager, Positionsabgleich, Profilanreicherung, Social Publishing und LinkedHelper in einer Extension.",
   "permissions": [
     "storage",
@@ -36,7 +36,7 @@
     }
   },
   "background": {
-    "service_worker": "service-worker-v420.js"
+    "service_worker": "service-worker-v421.js"
   },
   "content_scripts": [
     {
@@ -53,7 +53,8 @@
         "linkedin-position-background-v420.js",
         "linkedin-profile-identity-v411.js",
         "content.js",
-        "manual-outreach-v421.js"
+        "manual-outreach-v421.js",
+        "linkedhelper-auto-panel-v421.js"
       ]
     },
     {
@@ -69,7 +70,8 @@
         "social-photo-content-bridge.js",
         "profile-identity-v407.js",
         "content.js",
-        "manual-outreach-v421.js"
+        "manual-outreach-v421.js",
+        "linkedhelper-auto-panel-v421.js"
       ]
     },
     {

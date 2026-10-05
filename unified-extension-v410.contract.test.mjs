@@ -10,7 +10,7 @@ const manual = readFileSync(new URL('./manual-outreach-v421.js', import.meta.url
 const handoff = readFileSync(new URL('./esos-socialfinder-handoff-v421.js', import.meta.url), 'utf8');
 
 test('unified ESOS AI keeps the established background worker and adds helper scripts', () => {
-  assert.equal(manifest.background.service_worker, 'service-worker-v420.js');
+  assert.equal(manifest.background.service_worker, 'service-worker-v421.js');
   assert.ok(manifest.content_scripts.some(block => block.js?.includes('manual-outreach-v421.js')));
   assert.ok(manifest.content_scripts.some(block => block.js?.includes('esos-socialfinder-handoff-v421.js')));
 });
