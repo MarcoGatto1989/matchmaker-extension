@@ -7,6 +7,7 @@ const root = path.dirname(new URL(import.meta.url).pathname);
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 const bridgePath = path.join(root, 'linkedin-position-background-v420.js');
 const workerPath = path.join(root, 'service-worker-v421.js');
+const positionWorkerPath = path.join(root, 'service-worker-v420.js');
 
 const [major, minor, patch] = String(manifest.version || '0.0.0').split('.').map(Number);
 assert.ok(
@@ -15,7 +16,8 @@ assert.ok(
 );
 assert.equal(manifest.background?.service_worker, 'service-worker-v421.js');
 assert.equal(fs.existsSync(bridgePath), true, 'same-origin LinkedIn background bridge must exist');
-assert.equal(fs.existsSync(workerPath), true, 'v4.0.20 service worker must exist');
+assert.equal(fs.existsSync(workerPath), true, 'v4.1.1 wrapper service worker must exist');
+assert.equal(fs.existsSync(positionWorkerPath), true, 'v4.0.20 position worker must exist');
 
 const require = createRequire(import.meta.url);
 const bridge = require(bridgePath);
@@ -66,7 +68,9 @@ assert.match(bridgeSource, /credentials:\s*['"]include['"]/);
 assert.match(bridgeSource, /MatchMakerPositionParser/);
 assert.doesNotMatch(bridgeSource, /location\.(?:href|assign|replace)\s*=/);
 
-const workerSource = fs.readFileSync(workerPath, 'utf8');
+const wrapperSource = fs.readFileSync(workerPath, 'utf8');
+const workerSource = fs.readFileSync(positionWorkerPath, 'utf8');
+assert.match(wrapperSource, /importScripts\(['"]service-worker-v420\.js['"]\)/);
 assert.match(workerSource, /importScripts\(['"]service-worker-v419\.js['"]\)/);
 assert.match(workerSource, /ESOS_FETCH_LINKEDIN_POSITION/);
 assert.match(workerSource, /platform\s*!==\s*['"]linkedin['"]/);
