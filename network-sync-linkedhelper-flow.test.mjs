@@ -15,6 +15,7 @@ test('network sync uses the proven XING LinkedHelper flow', () => {
   assert.match(content, /dialogStillOpen/);
   assert.match(content, /projectAssignmentConfirmed/);
   assert.match(content, /currentConfirm\.disabled/);
+  assert.match(content, /closeProjectDialog/);
 });
 
 test('network sync saves LinkedIn candidates in Sales Navigator', () => {
