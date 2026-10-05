@@ -22,7 +22,10 @@
     "https://*.xingassets.com/*",
     "https://images.ctfassets.net/*",
     "https://app.esos.cloud/*",
-    "https://boot-outreach-api-production.up.railway.app/*"
+    "https://boot-outreach-api-production.up.railway.app/*",
+    "https://esos-frontend-test.up.railway.app/*",
+    "https://esos.cloud/*",
+    "https://www.esos.cloud/*"
   ],
   "action": {
     "default_popup": "popup-v415.html",
@@ -67,6 +70,17 @@
         "profile-identity-v407.js",
         "content.js",
         "manual-outreach-v421.js"
+      ]
+    },
+    {
+      "matches": [
+        "https://app.esos.cloud/*",
+        "https://esos.cloud/*",
+        "https://www.esos.cloud/*",
+        "https://esos-frontend-test.up.railway.app/*"
+      ],
+      "js": [
+        "esos-socialfinder-handoff-v421.js"
       ]
     }
   ],
