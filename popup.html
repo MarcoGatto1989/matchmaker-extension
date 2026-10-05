@@ -454,7 +454,26 @@
 
     <section class="tab-content" id="tab-network">
       <div class="tech-kicker">NETWORK SYNC</div>
-      <div class="manual-note">XING → TalentManager und LinkedIn → Sales Navigator laufen über dieselbe ESOS-AI-Extension. Erfolgreiche Profil-URLs bleiben nachvollziehbar und werden an ESOS zurückgegeben.</div>
+      <div class="manual-note">XING → TalentManager und LinkedIn → Sales Navigator laufen jetzt direkt in ESOS AI. Neue Profile werden an ESOS übergeben; bereits vorhandene Kandidaten werden separat gezählt.</div>
+
+      <div class="tech-card">
+        <div class="section-title" style="margin-top:0">XING → TalentManager</div>
+        <div class="setting-group"><label>Zielprojekt</label><input id="network-xing-project" type="text" placeholder="z. B. 275 Nachfolge Köln" /></div>
+        <button class="btn btn-primary" id="network-run-xing" type="button">Alle offenen XING-Profile verarbeiten</button>
+      </div>
+
+      <div class="tech-card">
+        <div class="section-title" style="margin-top:0">LinkedIn → Sales Navigator</div>
+        <button class="btn btn-primary" id="network-run-linkedin" type="button">Alle offenen LinkedIn-Profile speichern</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card"><div class="number" id="network-new-count">0</div><div class="label">Neu</div></div>
+        <div class="stat-card"><div class="number" id="network-existing-count">0</div><div class="label">Bereits vorhanden</div></div>
+        <div class="stat-card"><div class="number" id="network-error-count">0</div><div class="label">Fehler</div></div>
+      </div>
+      <div class="status-msg" id="network-run-status"></div>
+
       <div class="stats-grid">
         <div class="stat-card"><div class="number">LI</div><div class="label">Sales Navigator</div></div>
         <div class="stat-card"><div class="number">XI</div><div class="label">TalentManager</div></div>
