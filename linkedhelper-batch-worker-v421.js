@@ -18,14 +18,28 @@
     return next;
   }
 
+  async function ensureContentBridge(tabId) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      await sleep(180);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function sendTab(tabId, message, retries = 12, wait = 250) {
     let lastError = '';
+    let reinjected = false;
     for (let i = 0; i < retries; i += 1) {
       try {
         const result = await chrome.tabs.sendMessage(tabId, message);
         if (result) return result;
       } catch (error) {
         lastError = error?.message || String(error);
+        if (!reinjected && /receiving end does not exist|could not establish connection/i.test(lastError)) {
+          reinjected = await ensureContentBridge(tabId);
+        }
       }
       await sleep(wait);
     }
@@ -178,12 +192,21 @@
             continue;
           }
           await sleep(650);
+          await ensureContentBridge(tab.id);
         }
 
         const result = await sendTab(tab.id, {
           type: 'ESOS_XING_ADD_PROJECT',
           payload: { project_name: targetProject, project_url: '' },
         }, 18, 300);
+
+        if (!result?.success && isAlready(result)) {
+          existing += 1;
+          await setStatus({ added, existing, failed, lastError: '' });
+          await closeTab(tab.id);
+          await sleep(180);
+          continue;
+        }
 
         if (!result?.success) {
           failed += 1;
