@@ -639,6 +639,21 @@
       });
     };
 
+    const closeProjectDialog = () => {
+      const dialogs = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],dialog')).filter(isVisible);
+      const activeDialog = dialogs.find(el => /zu\s+projekt\s+hinzufügen/i.test(networkUiText(el)));
+      if (!activeDialog) return;
+      const close = Array.from(activeDialog.querySelectorAll('button,[role="button"],[aria-label]'))
+        .filter(isVisible)
+        .find(el => {
+          const label = normalizeUiText((el.getAttribute('aria-label') || '') + ' ' + (el.innerText || el.textContent || ''));
+          return /schließen|close|abbrechen|cancel/.test(label) || label === '×' || label === 'x';
+        });
+      if (close) {
+        try { HTMLElement.prototype.click.call(close); } catch (_) { try { close.click(); } catch (_) {} }
+      }
+    };
+
     const projectAssignmentConfirmed = () => {
       // XING often keeps the modal open even after a successful assignment. In that
       // state the green confirmation button becomes disabled and/or XING renders
@@ -702,6 +717,7 @@
       while (Date.now() < endTime) {
         await sleep(120);
         if (projectAssignmentConfirmed()) {
+          closeProjectDialog();
           await sleep(300);
           return { success: true, detail: `Projekt „${project}“ hinzugefügt.`, candidateName };
         }
