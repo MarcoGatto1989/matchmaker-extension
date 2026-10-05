@@ -525,6 +525,23 @@
       modal = candidates[0] || document;
     }
 
+    const assignedProjectNodes = Array.from(modal.querySelectorAll('button,[role="button"],[role="option"],li,div,span,label'))
+      .filter(isVisible)
+      .filter(el => sameProject(networkUiText(el)));
+    const alreadyAssignedTarget = assignedProjectNodes.find(el =>
+      /bereits\s+zugewiesen|bereits\s+im\s+projekt|already\s+assigned|already\s+in\s+project/i.test(networkUiText(el))
+      || el.getAttribute('aria-disabled') === 'true'
+      || el.hasAttribute('disabled')
+    );
+    if (alreadyAssignedTarget) {
+      return {
+        success: true,
+        alreadyAssigned: true,
+        detail: `Bereits im Projekt „${project}“.`,
+        candidateName,
+      };
+    }
+
     const visibleInputs = Array.from(modal.querySelectorAll('input')).filter(isVisible);
     const projectField = visibleInputs.find(input => sameProject(input.value || ''))
       || visibleInputs.find(input => /projekt|project|suchen|search/i.test((input.placeholder || '') + ' ' + (input.getAttribute('aria-label') || '')))
