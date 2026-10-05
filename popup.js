@@ -824,3 +824,124 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 loadNetworkSyncSuccessUrls().catch(() => {});
+
+
+// ESOS_MANUAL_OUTREACH_POPUP_V421
+(() => {
+  const connectBtn = document.getElementById('manual-mode-connect');
+  const messageBtn = document.getElementById('manual-mode-message');
+  const subjectInput = document.getElementById('manual-outreach-subject');
+  const textInput = document.getElementById('manual-outreach-text');
+  const sendBtn = document.getElementById('manual-outreach-send');
+  const statusEl = document.getElementById('manual-outreach-status');
+  const platformEl = document.getElementById('manual-outreach-platform');
+  const hoverToggle = document.getElementById('hover-highlight-toggle');
+
+  if (!connectBtn || !messageBtn || !textInput || !sendBtn) return;
+
+  let mode = 'connect';
+  const DEFAULT_NOTE = 'Vielen Dank für die Vernetzung. Ich würde mich gerne kurz und unverbindlich mit Ihnen zu einer interessanten beruflichen Möglichkeit austauschen.';
+
+  function setMode(next) {
+    mode = next === 'message' ? 'message' : 'connect';
+    connectBtn.classList.toggle('active', mode === 'connect');
+    messageBtn.classList.toggle('active', mode === 'message');
+    if (subjectInput) subjectInput.style.display = mode === 'message' ? 'block' : 'none';
+    sendBtn.textContent = mode === 'message' ? 'Nachricht / InMail senden' : 'Vernetzungsanfrage senden';
+    chrome.storage.local.set({ esos_manual_outreach_mode: mode });
+  }
+
+  function activeTab() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => resolve(tabs?.[0] || null));
+    });
+  }
+
+  function sendToTab(tabId, message) {
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message || 'Content-Script nicht erreichbar.' });
+          return;
+        }
+        resolve(response || { success: false, error: 'Keine Antwort vom Profil-Tab.' });
+      });
+    });
+  }
+
+  async function refreshPlatform() {
+    const tab = await activeTab();
+    const url = String(tab?.url || '');
+    let label = 'PROFIL';
+    let ok = false;
+    if (/linkedin\.com/i.test(url)) { label = 'LINKEDIN'; ok = true; }
+    else if (/xing\.com/i.test(url)) { label = 'XING'; ok = true; }
+    if (platformEl) {
+      platformEl.textContent = label;
+      platformEl.classList.toggle('ok', ok);
+    }
+  }
+
+  async function sendManualOutreach() {
+    const tab = await activeTab();
+    if (!tab?.id || !/linkedin\.com|xing\.com/i.test(String(tab.url || ''))) {
+      if (statusEl) statusEl.textContent = 'Bitte zuerst ein LinkedIn- oder XING-Profil öffnen.';
+      return;
+    }
+
+    const body = String(textInput.value || '').trim();
+    const subject = String(subjectInput?.value || '').trim();
+    if (!body) {
+      if (statusEl) statusEl.textContent = 'Bitte zuerst einen Text eingeben.';
+      return;
+    }
+
+    sendBtn.disabled = true;
+    if (statusEl) statusEl.textContent = mode === 'connect'
+      ? 'Vernetzungsanfrage wird vorbereitet …'
+      : 'Nachricht wird vorbereitet …';
+
+    await chrome.storage.local.set({
+      esos_manual_outreach_text: body,
+      esos_manual_outreach_subject: subject,
+      esos_manual_outreach_mode: mode,
+    });
+
+    const result = await sendToTab(tab.id, {
+      type: 'ESOS_MANUAL_OUTREACH_V421',
+      mode,
+      note: body,
+      body,
+      subject,
+    });
+
+    if (statusEl) statusEl.textContent = result?.success
+      ? (result.detail || 'Erfolgreich ausgeführt.')
+      : (result?.error || 'Aktion fehlgeschlagen.');
+    sendBtn.disabled = false;
+  }
+
+  connectBtn.addEventListener('click', () => setMode('connect'));
+  messageBtn.addEventListener('click', () => setMode('message'));
+  sendBtn.addEventListener('click', sendManualOutreach);
+
+  if (hoverToggle) {
+    hoverToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ esos_hover_highlight_fields: Boolean(hoverToggle.checked) });
+    });
+  }
+
+  chrome.storage.local.get([
+    'esos_manual_outreach_text',
+    'esos_manual_outreach_subject',
+    'esos_manual_outreach_mode',
+    'esos_hover_highlight_fields',
+  ], (stored) => {
+    textInput.value = stored.esos_manual_outreach_text || DEFAULT_NOTE;
+    if (subjectInput) subjectInput.value = stored.esos_manual_outreach_subject || '';
+    setMode(stored.esos_manual_outreach_mode || 'connect');
+    if (hoverToggle) hoverToggle.checked = Boolean(stored.esos_hover_highlight_fields);
+  });
+
+  refreshPlatform();
+})();
