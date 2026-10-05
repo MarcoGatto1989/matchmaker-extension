@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ESOS AI",
   "version": "4.1.0",
-  "description": "ESOS AI Unified: CRM-Import, Outreach, LinkedIn/XING Network Sync, Positionsabgleich, Profilanreicherung, Social Publishing und manueller LinkedIn/XING Helper in einer Extension.",
+  "description": "ESOS AI Unified: CRM-Import, Outreach, LinkedIn Sales Navigator, XING TalentManager, Positionsabgleich, Profilanreicherung, Social Publishing und LinkedHelper in einer Extension.",
   "permissions": [
     "storage",
     "activeTab",
