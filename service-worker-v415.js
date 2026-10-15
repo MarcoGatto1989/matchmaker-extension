@@ -14,6 +14,8 @@ const ESOS_V415_LEGACY_ORIGINS = new Set([
 function esosV415CanonicalApiBase(value) {
   const raw = String(value || '').trim().replace(/\/$/, '');
   if (!raw) return ESOS_V415_API_BASE;
+  // Test and production are separate queues and issue separate tenant tokens.
+  if (raw === 'https://esos-frontend-test.up.railway.app') return raw;
   try {
     const parsed = new URL(raw);
     if (parsed.origin === ESOS_V415_API_BASE) return ESOS_V415_API_BASE;
@@ -43,10 +45,8 @@ getApiBase = function esosV415GetApiBase() {
 };
 
 async function esosV415SyncSession() {
-  try {
-    await chrome.storage.local.set({ esos_url: ESOS_V415_API_BASE });
-  } catch (_) {}
-
+  // Honour the selected API origin. A test installation must not silently
+  // reconnect to production when the service worker starts or syncs a session.
   // The prior session bridge performs the secure HttpOnly-cookie -> extension-session sync.
   // Calling it after replacing getApiBase makes it read the cookie from app.esos.cloud,
   // i.e. the canonical CRM/API deployment the extension must authenticate against.
