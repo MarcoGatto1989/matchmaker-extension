@@ -13,6 +13,13 @@
   ]);
   const nativeFetch = globalThis.fetch.bind(globalThis);
   let sessionPromise = null;
+  const ESOS_V415_TEST_API_BASE = 'https://esos-frontend-test.up.railway.app';
+
+  async function esosV415ConfiguredApiBase() {
+    const settings = await chrome.storage.local.get('esos_url');
+    return String(settings?.esos_url || '').trim().replace(/\/$/, '') === ESOS_V415_TEST_API_BASE
+      ? ESOS_V415_TEST_API_BASE : ESOS_V415_API_BASE;
+  }
 
   function esosV415RewriteUrl(raw) {
     try {
@@ -28,10 +35,10 @@
     }
   }
 
-  async function esosV415CookieToken() {
+  async function esosV415CookieToken(apiBase) {
     try {
       const cookie = await chrome.cookies.get({
-        url: `${ESOS_V415_API_BASE}/`,
+        url: `${apiBase}/`,
         name: 'esos_token',
       });
       return cookie?.value || '';
@@ -43,16 +50,17 @@
   async function esosV415BrowserSession() {
     if (sessionPromise) return sessionPromise;
     sessionPromise = (async () => {
+      const apiBase = await esosV415ConfiguredApiBase();
       // Ask the service worker first so storage and the worker queue use the same session.
       try {
         await chrome.runtime.sendMessage({ type: 'SYNC_ESOS_SESSION' });
       } catch (_) {}
 
-      const token = await esosV415CookieToken();
+      const token = await esosV415CookieToken(apiBase);
       if (!token) return null;
 
       try {
-        const response = await nativeFetch(`${ESOS_V415_API_BASE}/api/auth/me`, {
+        const response = await nativeFetch(`${apiBase}/api/auth/me`, {
           method: 'GET',
           cache: 'no-store',
           headers: { Authorization: `Bearer ${token}` },
@@ -61,7 +69,7 @@
         const user = await response.json();
         try {
           await chrome.storage.local.set({
-            esos_url: ESOS_V415_API_BASE,
+            esos_url: apiBase,
             esos_jwt: token,
             esos_jwt_source: 'browser_cookie',
           });
@@ -110,9 +118,11 @@
 
   async function esosV415RefreshPopupSession() {
     const session = await esosV415BrowserSession();
+    const apiBase = await esosV415ConfiguredApiBase();
     const input = document.getElementById('esos-url');
-    if (input) input.value = ESOS_V415_API_BASE;
-    try { await chrome.storage.local.set({ esos_url: ESOS_V415_API_BASE }); } catch (_) {}
+    if (input) input.value = apiBase;
+    // Never overwrite the user's explicit test selection on popup open.
+    try { await chrome.storage.local.set({ esos_url: apiBase }); } catch (_) {}
 
     if (!session?.token) return;
     try { esosToken = session.token; } catch (_) {}

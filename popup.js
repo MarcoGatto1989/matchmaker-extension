@@ -30,7 +30,8 @@ function getSettings() {
   });
 }
 
-const DEFAULT_ESOS_URL = 'https://esos-web-production.up.railway.app';
+const DEFAULT_ESOS_URL = 'https://app.esos.cloud';
+const ESOS_TEST_URL = 'https://esos-frontend-test.up.railway.app';
 
 function getEsosUrl(settings) {
   const configured = String(settings?.esos_url || '').trim().replace(/\/$/, '');
@@ -38,7 +39,7 @@ function getEsosUrl(settings) {
   try {
     const parsed = new URL(configured);
     const defaultHost = new URL(DEFAULT_ESOS_URL).hostname;
-    if (parsed.hostname.endsWith('.up.railway.app') && parsed.hostname !== defaultHost) {
+    if (parsed.hostname.endsWith('.up.railway.app') && parsed.hostname !== defaultHost && parsed.origin !== ESOS_TEST_URL) {
       chrome.storage.local.set({ esos_url: DEFAULT_ESOS_URL });
       return DEFAULT_ESOS_URL;
     }
