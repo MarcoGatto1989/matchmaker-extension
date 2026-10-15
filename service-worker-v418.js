@@ -5,6 +5,7 @@ importScripts('service-worker-v415.js');
 
 const ESOS_V418_TOKEN_VERIFY_TTL_MS = 5 * 60 * 1000;
 let esosV418VerifiedToken = '';
+let esosV418VerifiedApiBase = '';
 let esosV418TokenVerifiedAt = 0;
 let esosV418EnsurePromise = null;
 
@@ -79,6 +80,7 @@ async function esosV418EnsureExtensionToken() {
     if (
       currentToken
       && currentToken === esosV418VerifiedToken
+      && apiBase === esosV418VerifiedApiBase
       && now - esosV418TokenVerifiedAt < ESOS_V418_TOKEN_VERIFY_TTL_MS
     ) {
       return { connected: true, token: currentToken, source: 'cached_extension_token' };
@@ -88,6 +90,7 @@ async function esosV418EnsureExtensionToken() {
       const heartbeat = await esosV418Heartbeat(apiBase, currentToken);
       if (heartbeat.accepted) {
         esosV418VerifiedToken = currentToken;
+        esosV418VerifiedApiBase = apiBase;
         esosV418TokenVerifiedAt = now;
         return { connected: true, token: currentToken, source: 'existing_extension_token' };
       }
@@ -115,6 +118,7 @@ async function esosV418EnsureExtensionToken() {
     }
 
     esosV418VerifiedToken = rotated.token;
+    esosV418VerifiedApiBase = apiBase;
     esosV418TokenVerifiedAt = Date.now();
     return { connected: true, token: rotated.token, source: 'rotated_extension_token' };
   })();
