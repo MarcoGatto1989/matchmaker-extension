@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ESOS AI",
-  "version": "4.1.3",
+  "version": "4.1.4",
   "description": "ESOS AI Unified: CRM-Import, Outreach, Network Sync mit LinkedIn Sales Navigator und XING TalentManager, Positionsabgleich, Profilanreicherung, Social Publishing und LinkedHelper in einer Extension.",
   "permissions": [
     "storage",
@@ -9,7 +9,8 @@
     "scripting",
     "alarms",
     "tabs",
-    "cookies"
+    "cookies",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
@@ -28,7 +29,6 @@
     "https://www.esos.cloud/*"
   ],
   "action": {
-    "default_popup": "popup-v415.html",
     "default_icon": {
       "16": "icon16.png",
       "48": "icon48.png",
@@ -86,5 +86,8 @@
       ]
     }
   ],
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1W5V5zeuKI+EsCgZw/NuZz5X4u2WpRf/EckWID4U5N9aCIDNcuc570g5TY99z4nLNUOAyL3oz8IxhmZWrFjmcVXHZWPcRBBff4gb7LKRPR2vP9g8B81j7rfmAZOIHMiN7rw3vKzI+MZpd2UVxjH2pS8mEEoIcr9mzjEXZXLhXrXtR7/9JHdMzReiaui42mXhmo62AMY09fmosYxsLE9EB13T/RxR/5DGRb+pehITOD7oRRNTzTBDwBbFPpbcxLx6NkPTbs2hTTIBbxCd3AhafJJdEYXzN9f2K3b0vpkHyaaKNjMYe6gFRbBLuSrwl8L3B/xwxN3gyj/uTL+C9LE+twIDAQAB"
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1W5V5zeuKI+EsCgZw/NuZz5X4u2WpRf/EckWID4U5N9aCIDNcuc570g5TY99z4nLNUOAyL3oz8IxhmZWrFjmcVXHZWPcRBBff4gb7LKRPR2vP9g8B81j7rfmAZOIHMiN7rw3vKzI+MZpd2UVxjH2pS8mEEoIcr9mzjEXZXLhXrXtR7/9JHdMzReiaui42mXhmo62AMY09fmosYxsLE9EB13T/RxR/5DGRb+pehITOD7oRRNTzTBDwBbFPpbcxLx6NkPTbs2hTTIBbxCd3AhafJJdEYXzN9f2K3b0vpkHyaaKNjMYe6gFRbBLuSrwl8L3B/xwxN3gyj/uTL+C9LE+twIDAQAB",
+  "side_panel": {
+    "default_path": "scout-sidepanel.html"
+  }
 }
