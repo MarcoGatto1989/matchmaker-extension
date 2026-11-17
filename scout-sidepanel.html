@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESOS AI · Talent Scout</title>
+  <style>
+    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172238;color-scheme:light}
+    body{margin:0;background:#f6f8fc}
+    header{background:#101c32;color:white;padding:15px 16px;display:flex;justify-content:space-between;align-items:center}
+    header strong{font-size:15px} small{opacity:.7}
+    main{padding:16px;display:grid;gap:14px}
+    h2{font-size:16px;margin:0}
+    .box{border:1px solid #dce4ee;border-radius:10px;background:white;padding:14px;display:grid;gap:12px}
+    .hint{color:#57667c;font-size:12px;line-height:1.45}
+    label{display:grid;gap:5px;font-weight:600;font-size:12px}
+    input,select{font-size:13px;padding:10px;border-radius:6px;border:1px solid #cbd5e1;width:100%;box-sizing:border-box;background:white}
+    button{font-size:13px;font-weight:600;padding:11px;border:0;border-radius:7px;color:white;background:#275ee5;cursor:pointer}
+    button.secondary{color:#24324a;background:#e7edf7}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    .progress{background:#e8edf5;height:10px;border-radius:20px;overflow:hidden}
+    .progress>div{background:#2b74db;height:100%;width:0%;transition:width .25s}
+    .stats{display:flex;justify-content:space-between;font-size:12px}
+    .error{font-size:12px;color:#b42318;white-space:pre-wrap}
+    .success{font-size:12px;color:#12703b;white-space:pre-wrap}
+    nav{display:flex;gap:6px}nav button{flex:1}
+    iframe{width:100%;height:75vh;border:0;background:white}
+    .hidden{display:none!important}
+    a{font-size:12px;color:#2258c2}
+  </style>
+</head>
+<body>
+  <header><strong>ESOS AI · Talent Scout</strong><small>Suchimport 2.0</small></header>
+  <main>
+    <nav><button id="tab-scout">Suche importieren</button><button id="tab-existing" class="secondary">Andere ESOS-AI-Funktionen</button></nav>
+    <div id="scout-ui" class="box">
+      <h2>Aktuelle Suche importieren</h2>
+      <div class="hint">Starte zuerst eine Suche bei XING, XING TalentManager oder LinkedIn. Die Seite bleibt geöffnet. Nur ihre sichtbaren Suchergebnisse werden erfasst; keine automatische Personensuche.</div>
+      <label>Suchplattform<input id="platform" readonly placeholder="Suchseite öffnen"></label>
+      <label>Optionales ESOS-Projekt<select id="project"><option value="">Kein Projekt – nur Kandidatenstamm</option></select></label>
+      <label>Anzahl laut Suchseite<input id="expected" type="number" min="1" max="10000" placeholder="Wird automatisch erkannt, falls vorhanden"></label>
+      <button id="start">Aktuelle Suche importieren</button>
+      <button id="cancel" class="secondary hidden">Erfassung stoppen</button>
+      <div class="progress"><div id="bar"></div></div>
+      <div class="stats"><span id="status">Bereit</span><strong id="counts">0 / –</strong></div>
+      <div id="detail" class="hint" role="status">Alle „Mehr anzeigen“-Ergebnisse werden nacheinander geprüft und nur in der Talent-Scout-Warteschlange gespeichert.</div>
+      <div id="error" class="error" role="alert"></div>
+      <div id="success" class="success"></div>
+      <a id="open-inbox" href="#" class="hidden">Import in ESOS prüfen und freigeben</a>
+    </div>
+    <div id="existing-ui" class="hidden"><iframe title="Bisherige ESOS AI Oberfläche" src="popup-v415.html"></iframe></div>
+  </main>
+  <script src="scout-sidepanel.js"></script>
+</body>
+</html>

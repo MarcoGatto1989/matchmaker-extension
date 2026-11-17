@@ -1,6 +1,7 @@
 // ESOS AI v4.1.3 — keep the proven ESOS worker chain and add persistent LinkedHelper batch orchestration.
 importScripts('service-worker-v420.js');
 importScripts('linkedhelper-batch-worker-v421.js');
+importScripts('scout-sidepanel-worker.js');
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ESOS_OPEN_EXTENSION_POPUP_HINT') return undefined;
