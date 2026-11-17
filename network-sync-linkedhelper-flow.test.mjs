@@ -36,7 +36,7 @@ test('network sync closes successful tabs and preserves failed tabs', () => {
 });
 
 test('extension release identifies Network Sync capability', () => {
-  assert.equal(manifest.version, '4.1.3');
+  assert.equal(manifest.version, '4.1.4');
   assert.match(manifest.description, /Network Sync/);
   assert.match(manifest.description, /Sales Navigator/);
   assert.match(manifest.description, /TalentManager/);
