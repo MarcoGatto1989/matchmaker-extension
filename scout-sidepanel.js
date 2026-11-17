@@ -130,16 +130,30 @@ function captureVisibleSearchPage({ clickMore }) {
   const more = [...document.querySelectorAll('button,a,[role="button"]')].find(el =>
     visible(el) && /^(mehr anzeigen|weitere anzeigen|show more|load more|mehr laden|weitere ergebnisse)$/i.test(compact(el.innerText || el.getAttribute('aria-label')))
   );
-  let clicked = false;
+  // Some search providers render subsequent results on separate pages instead
+  // of providing a "Mehr anzeigen" button. Advance the current tab in place.
+  const next = !more && [...document.querySelectorAll('button,a,[role="button"]')].find(el =>
+    visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true' &&
+    (/(nächste seite|next page|weiter)/i.test(compact(el.innerText || el.getAttribute('aria-label'))) ||
+      /^(next|nächste)$/i.test(compact(el.getAttribute('aria-label') || '')))
+  );
+  let clicked = false, clickedNext = false;
   if (clickMore && more && !more.disabled && more.getAttribute('aria-disabled') !== 'true') {
     more.click(); clicked = true;
+  } else if (clickMore && next) {
+    next.click(); clickedNext = true;
+  } else if (clickMore) {
+    // Trigger lazy-loading inside the results container, but do not scroll
+    // the page endlessly or synthesize extra search queries.
+    const scroller = document.querySelector('[class*="search-results"],[class*="results-list"],main');
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
   const text = document.body?.innerText || '';
   // Conservative count detection; human can correct it before starting.
   const counts = [...text.matchAll(/(\d{1,3}(?:[.,]\d{3})+|\d{1,5})\s+(?:Mitglieder|Ergebnisse|Personen|results|members)\b/gi)]
     .map(m => Number(m[1].replace(/[.,]/g, ''))).filter(n => n >= urls.size && n <= 10000);
   return { candidates: [...urls.values()], expected: counts.length ? counts[0] : null,
-    clicked, hasMore: !!more, pageUrl: url };
+    clicked, clickedNext, hasMore: !!more || !!next, pageUrl: url };
 }
 async function readPageAndExpand() {
   const injected = await chrome.scripting.executeScript({
@@ -195,12 +209,12 @@ $('start').addEventListener('click', async () => {
       const count = await writeBatches(result.candidates, seen);
       state.cycles = cycle + 1; updateCounts();
       showMessage('Durchlauf ' + state.cycles + ': ' + state.total + ' verschiedene Profile gesichert. ' +
-        (result.clicked ? '„Mehr anzeigen“ wurde betätigt.' : 'Keine weitere Schaltfläche gefunden.'));
+        (result.clicked ? '„Mehr anzeigen“ wurde betätigt.' : result.clickedNext ? 'Zur nächsten Ergebnisseite gewechselt.' : 'Keine weitere Schaltfläche gefunden.'));
       if (state.expected && state.total >= state.expected) break;
       if (count === 0) stale++; else stale = 0;
-      if (!result.hasMore && !result.clicked && stale >= 2) { stopReason = 'Keine weiteren Ergebnisse geladen'; break; }
+      if (!result.hasMore && !result.clicked && !result.clickedNext && stale >= 2) { stopReason = 'Keine weiteren Ergebnisse geladen'; break; }
       if (stale >= 5) { stopReason = 'Ergebniszahl erhöht sich nicht mehr'; break; }
-      await sleep(result.clicked ? 1600 : 1000);
+      await sleep(result.clicked || result.clickedNext ? 1800 : 1200);
     }
     if (!stopReason && state.cycles >= 180 && (!state.expected || state.total < state.expected))
       stopReason = 'Sicherheitsgrenze von 180 Durchläufen erreicht';
